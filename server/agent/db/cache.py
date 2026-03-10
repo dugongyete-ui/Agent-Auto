@@ -39,40 +39,58 @@ class CacheStore:
         password: Optional[str] = None,
         default_ttl: int = 86400,
     ) -> None:
-        self._host = host or os.environ.get("REDIS_HOST", "localhost")
+        self._host = host or os.environ.get("REDIS_HOST", "")
         self._port = port or int(os.environ.get("REDIS_PORT", "6379"))
         self._password = password or os.environ.get("REDIS_PASSWORD", "")
+        self._redis_url = os.environ.get("REDIS_URL", "")
         self._default_ttl = default_ttl
         self._client: Any = None
         self._connected = False
+        self._connect_attempted = False
 
     async def connect(self) -> bool:
-        """Connect to Redis. Returns True on success."""
+        """Connect to Redis. Returns True on success. Only attempts once."""
+        if self._connect_attempted:
+            return self._connected
+        self._connect_attempted = True
+
         if not _redis_available:
             logger.warning("[CacheStore] redis not available, skipping connect.")
             return False
+
+        if not self._redis_url and not self._host:
+            logger.warning("[CacheStore] REDIS_URL/REDIS_HOST not set, skipping Redis connect.")
+            return False
+
         try:
             if hasattr(aioredis, 'from_url'):
-                url = f"redis://:{self._password}@{self._host}:{self._port}/0"
+                if self._redis_url:
+                    url = self._redis_url
+                elif self._password:
+                    url = f"redis://:{self._password}@{self._host}:{self._port}/0"
+                else:
+                    url = f"redis://{self._host}:{self._port}/0"
                 self._client = aioredis.from_url(
                     url,
                     encoding="utf-8",
                     decode_responses=True,
                     socket_connect_timeout=5,
+                    socket_timeout=5,
+                    retry_on_timeout=False,
                 )
             else:
                 self._client = await aioredis.create_redis_pool(
-                    f"redis://{self._host}:{self._port}",
+                    self._redis_url or f"redis://{self._host}:{self._port}",
                     password=self._password or None,
                     encoding="utf-8",
                     timeout=5,
                 )
             await self._client.ping()
             self._connected = True
-            logger.info("[CacheStore] Connected to Redis at %s:%s", self._host, self._port)
+            logger.info("[CacheStore] Connected to Redis.")
             return True
         except Exception as e:
-            logger.error("[CacheStore] Redis connection failed: %s", e)
+            logger.warning("[CacheStore] Redis unavailable (will run without cache): %s", e)
             self._connected = False
             return False
 

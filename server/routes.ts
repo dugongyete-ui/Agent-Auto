@@ -4,12 +4,29 @@ import * as https from "node:https";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
+import multer from "multer";
 
 // ─── File Download Store ─────────────────────────────────────────────────────
 const DZECK_FILES_DIR = "/tmp/dzeck_files";
+const DZECK_UPLOADS_DIR = "/tmp/dzeck_files/uploads";
 if (!fs.existsSync(DZECK_FILES_DIR)) {
   fs.mkdirSync(DZECK_FILES_DIR, { recursive: true });
 }
+if (!fs.existsSync(DZECK_UPLOADS_DIR)) {
+  fs.mkdirSync(DZECK_UPLOADS_DIR, { recursive: true });
+}
+
+// ─── Multer Upload Config ─────────────────────────────────────────────────────
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, DZECK_UPLOADS_DIR),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname);
+      cb(null, `${Date.now()}-${randomUUID().slice(0,8)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
 
 // ─── E2B Cloud Sandbox (replaces VNC) ────────────────────────────────────────
 const E2B_ENABLED = !!process.env.E2B_API_KEY;
@@ -139,6 +156,7 @@ export async function registerRoutes(app: any): Promise<Server> {
 
     let buf = "";
     let doneSent = false;
+    let stderrBuffer = "";
 
     res.write(`data: ${JSON.stringify({ type: "session", session_id: sid, e2b_enabled: E2B_ENABLED })}\n\n`);
 
@@ -157,20 +175,26 @@ export async function registerRoutes(app: any): Promise<Server> {
     });
 
     proc.stderr.on("data", (data: Buffer) => {
-      const stderr = data.toString();
-      console.error("[Agent stderr]:", stderr);
-      const BENIGN = [/redis/i, /mongodb/i, /motor/i, /DNS/i, /Name or service not known/i,
-        /ConnectionRefusedError/i, /\[CacheStore\]/i, /\[SessionStore\]/i, /\[SessionService\]/i,
-        /WARNING:/i, /DeprecationWarning/i, /connection failed/i, /Traceback/i];
-      if (!BENIGN.some(p => p.test(stderr)) && !doneSent && !res.writableEnded) {
-        res.write(`data: ${JSON.stringify({ type: "error", error: stderr })}\n\n`);
-      }
+      stderrBuffer += data.toString();
+      console.error("[Agent stderr]:", data.toString());
     });
 
     proc.on("close", (code: number | null) => {
+      // Only send a user-facing error if process failed AND stderr has real (non-benign) content
+      if (code !== 0 && stderrBuffer && !doneSent && !res.writableEnded) {
+        const BENIGN = [/redis/i, /mongodb/i, /motor/i, /DNS/i, /Name or service not known/i,
+          /ConnectionRefusedError/i, /\[CacheStore\]/i, /\[SessionStore\]/i, /\[SessionService\]/i,
+          /WARNING:/i, /DeprecationWarning/i, /connection failed/i, /Traceback/i,
+          /aioredis/i, /pymongo/i, /socket\.gaierror/i, /\[agent\]/i];
+        const hasRealError = !BENIGN.some(p => p.test(stderrBuffer));
+        if (hasRealError) {
+          // Send a clean, user-friendly error — not raw Python traceback
+          res.write(`data: ${JSON.stringify({ type: "error", error: "Agen mengalami kesalahan internal. Silakan coba lagi." })}\n\n`);
+        }
+      }
       if (!doneSent && !res.writableEnded) res.write("data: [DONE]\n\n");
       res.end();
-      if (code !== 0) console.error(`Agent process exited with code ${code}`);
+      if (code !== 0) console.error(`Agent process exited with code ${code}. Stderr: ${stderrBuffer.slice(-500)}`);
     });
 
     res.on("close", () => { proc.kill(); });
@@ -284,6 +308,41 @@ export async function registerRoutes(app: any): Promise<Server> {
       if (!res.headersSent) res.status(500).json({ error: "Failed to stream file" });
     });
     stream.pipe(res);
+  });
+
+  // ─── File Upload endpoint ────────────────────────────────────────────────────
+  app.post("/api/upload", upload.array("files", 10), (req: any, res: any) => {
+    try {
+      const files = (req.files as any[]) || [];
+      if (files.length === 0) {
+        return res.status(400).json({ error: "No files uploaded" });
+      }
+      const result = files.map((f: any) => {
+        const filePath = f.path;
+        const fileName = f.originalname;
+        const mime = f.mimetype || "application/octet-stream";
+        const size = f.size;
+        const isImage = mime.startsWith("image/");
+        const isText = mime.startsWith("text/") || /\.(txt|md|py|js|ts|json|csv|xml|html|css|sh|yaml|yml|toml|ini|log)$/i.test(fileName);
+        let preview: string | null = null;
+        if (isText && size < 500 * 1024) {
+          try { preview = fs.readFileSync(filePath, "utf-8"); } catch {}
+        }
+        return {
+          filename: fileName,
+          path: filePath,
+          mime,
+          size,
+          is_image: isImage,
+          is_text: isText,
+          preview,
+          download_url: `/api/files/download?path=${encodeURIComponent(filePath)}&name=${encodeURIComponent(fileName)}`,
+        };
+      });
+      res.json({ files: result });
+    } catch (err: any) {
+      res.status(500).json({ error: "Upload failed: " + err.message });
+    }
   });
 
   // ─── File list endpoint (files created by AI) ───────────────────────────────

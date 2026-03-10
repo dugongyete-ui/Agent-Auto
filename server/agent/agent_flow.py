@@ -191,18 +191,36 @@ def call_cf_streaming(messages: list) -> str:
                         break
                     try:
                         parsed = json.loads(payload)
-                        content = (
+                        raw_content = (
                             parsed.get("response")
                             or (parsed.get("choices", [{}])[0].get("delta", {}).get("content"))
                             or ""
                         )
-                        if content:
+                        if raw_content:
+                            if isinstance(raw_content, dict):
+                                content = raw_content.get("message") or raw_content.get("text") or raw_content.get("content") or json.dumps(raw_content, ensure_ascii=False)
+                            elif isinstance(raw_content, str):
+                                content = raw_content
+                            else:
+                                content = str(raw_content)
                             full_text += content
                     except (json.JSONDecodeError, IndexError, KeyError):
                         pass
     except Exception as e:
         sys.stderr.write("CF streaming error: {}\n".format(e))
         sys.stderr.flush()
+    if full_text:
+        t = full_text.strip()
+        if t.startswith("{") or t.startswith("["):
+            try:
+                obj = json.loads(t)
+                if isinstance(obj, dict):
+                    for key in ("message", "text", "response", "content", "summary", "result"):
+                        if key in obj and isinstance(obj[key], str):
+                            full_text = obj[key]
+                            break
+            except Exception:
+                pass
     return full_text
 
 
@@ -246,13 +264,17 @@ async def call_cf_streaming_realtime(
                             return
                         try:
                             parsed = json.loads(payload)
-                            content = (
+                            raw_c = (
                                 parsed.get("response")
                                 or (parsed.get("choices", [{}])[0].get("delta", {}).get("content"))
                                 or ""
                             )
-                            if content:
-                                loop.call_soon_threadsafe(queue.put_nowait, content)
+                            if raw_c:
+                                if isinstance(raw_c, dict):
+                                    raw_c = raw_c.get("message") or raw_c.get("text") or raw_c.get("content") or json.dumps(raw_c, ensure_ascii=False)
+                                elif not isinstance(raw_c, str):
+                                    raw_c = str(raw_c)
+                                loop.call_soon_threadsafe(queue.put_nowait, raw_c)
                         except (json.JSONDecodeError, IndexError, KeyError):
                             pass
         except Exception as e:
@@ -304,14 +326,34 @@ def call_cf_api(
     return result
 
 
+def _normalize_response_text(value: Any) -> str:
+    """Normalize a Cloudflare 'response' field to always be a string.
+    
+    Some models (e.g. llama-4-scout) return structured JSON objects directly
+    in the 'response' field instead of a string. This function serializes
+    them back to a JSON string so the rest of the pipeline can parse them.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        return json.dumps(value)
+    return str(value)
+
+
 def call_cf_text(messages: list) -> str:
     result = call_cf_api(messages)
     cf_result = result.get("result", result)
-    text = cf_result.get("response") or ""
+    if not isinstance(cf_result, dict):
+        cf_result = result
+    raw_text = cf_result.get("response")
+    text = _normalize_response_text(raw_text)
     if not text:
         choices = result.get("choices", [])
         if choices:
-            text = choices[0].get("message", {}).get("content", "") or ""
+            content = choices[0].get("message", {}).get("content", "")
+            text = _normalize_response_text(content)
     return text
 
 
@@ -335,16 +377,42 @@ def call_text_with_retry(messages: list, max_retries: int = 5) -> str:
     raise RuntimeError("LLM call failed after {} retries".format(max_retries))
 
 
+_TOOLS_SUPPORTED: Optional[bool] = None  # None = unknown, True/False = determined
+
+
 def call_api_with_retry(
     messages: list,
     tools: Optional[List[Dict[str, Any]]] = None,
     max_retries: int = 5,
 ) -> Dict[str, Any]:
+    """Call Cloudflare API with retry. Falls back to text-only mode if tools cause 400."""
+    global _TOOLS_SUPPORTED
     last_error: Optional[Exception] = None
+
+    # If we already know tools aren't supported, skip sending them
+    effective_tools = tools if _TOOLS_SUPPORTED is not False else None
+
     for attempt in range(max_retries):
         try:
-            return call_cf_api(messages, tools=tools)
+            result = call_cf_api(messages, tools=effective_tools)
+            if effective_tools is not None:
+                _TOOLS_SUPPORTED = True  # Model supports tools
+            return result
         except urllib.error.HTTPError as e:
+            if e.code == 400 and effective_tools is not None:
+                # Model doesn't support native tool calling — fall back to text mode
+                _TOOLS_SUPPORTED = False
+                sys.stderr.write(
+                    "[agent] Model doesn't support native tool schemas (400). "
+                    "Falling back to text-based tool calling.\n"
+                )
+                sys.stderr.flush()
+                effective_tools = None
+                try:
+                    return call_cf_api(messages, tools=None)
+                except Exception as e2:
+                    last_error = e2
+                    continue
             last_error = e
             if e.code == 429 or e.code >= 500:
                 time.sleep(2 ** attempt)
@@ -362,14 +430,17 @@ def call_api_with_retry(
 def _extract_cf_response(api_result: Dict[str, Any]) -> tuple:
     """Extract (text, tool_calls) from Cloudflare response."""
     cf_result = api_result.get("result", api_result)
-    text = cf_result.get("response") or ""
+    if not isinstance(cf_result, dict):
+        cf_result = api_result
+    raw_text = cf_result.get("response")
+    text = _normalize_response_text(raw_text)
     tool_calls = cf_result.get("tool_calls")
 
     if not text and not tool_calls:
         choices = api_result.get("choices", [])
         if choices:
             msg = choices[0].get("message", {})
-            text = msg.get("content", "") or ""
+            text = _normalize_response_text(msg.get("content", ""))
             oa_calls = msg.get("tool_calls")
             if oa_calls:
                 tool_calls = []
@@ -522,7 +593,7 @@ class DzeckAgent:
             return "ja"
         if any("\uac00" <= c <= "\ud7af" for c in text):
             return "ko"
-        return "en"
+        return "id"
 
     def _is_simple_query(self, user_message: str) -> bool:
         """
@@ -649,15 +720,39 @@ class DzeckAgent:
 
         return False
 
+    def _build_attachments_info(self, attachments: Optional[List] = None) -> str:
+        """Build a human-readable attachments description from a list of dicts or strings."""
+        if not attachments:
+            return ""
+        parts = []
+        for a in attachments:
+            if isinstance(a, dict):
+                fname = a.get("filename") or a.get("name") or "file"
+                fpath = a.get("path") or ""
+                mime = a.get("mime") or ""
+                preview = a.get("preview") or ""
+                desc = fname
+                if fpath:
+                    desc += f" (saved at {fpath})"
+                if mime:
+                    desc += f" [{mime}]"
+                if preview:
+                    snippet = preview[:500] + ("..." if len(preview) > 500 else "")
+                    desc += f"\nContent preview:\n{snippet}"
+                parts.append(desc)
+            elif isinstance(a, str):
+                parts.append(a)
+        return "Lampiran:\n" + "\n---\n".join(parts) if parts else ""
+
     async def run_planner_async(
         self,
         user_message: str,
-        attachments: Optional[List[str]] = None,
+        attachments: Optional[List] = None,
     ) -> Plan:
         """Create plan asynchronously (runs sync LLM call in thread pool)."""
         self.state = FlowState.PLANNING
         language = self._detect_language(user_message)
-        attachments_info = "Attachments: {}".format(", ".join(attachments)) if attachments else ""
+        attachments_info = self._build_attachments_info(attachments)
         prompt = CREATE_PLAN_PROMPT.format(
             message=user_message,
             language=language,
@@ -815,21 +910,57 @@ class DzeckAgent:
             attachments_info="",
         )
 
+        # Build tool list description for text-based mode (when native tools not supported)
+        _TEXT_TOOL_INSTRUCTION = """
+IMPORTANT: This model uses TEXT-BASED tool calling. You do NOT have native function calling.
+To call a tool, respond with ONLY a JSON object in this format:
+{"tool": "tool_name", "args": {"param": "value"}}
+
+To signal step completion, respond with:
+{"done": true, "success": true, "result": "summary of what was done"}
+
+Available tools:
+- info_search_web: Search the web. Args: {"query": "search query"}
+- web_browse: Open/browse a URL. Args: {"url": "https://..."}
+- browser_navigate: Navigate browser to URL. Args: {"url": "https://..."}
+- browser_view: Take screenshot of current page. Args: {}
+- shell_exec: Run shell command. Args: {"id": "sess1", "exec_dir": "/tmp", "command": "ls -la"}
+- file_read: Read a file. Args: {"path": "/path/to/file"}
+- file_write: Write a file. Args: {"path": "/path/to/file", "content": "..."}
+- message_notify_user: Send a message to user. Args: {"text": "message"}
+- idle: Mark step done. Args: {"success": true, "result": "summary"}
+
+ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
+"""
+        def _build_system_content() -> str:
+            return EXECUTION_SYSTEM_PROMPT + (_TEXT_TOOL_INSTRUCTION if _TOOLS_SUPPORTED is False else "")
+
         exec_messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": EXECUTION_SYSTEM_PROMPT},
+            {"role": "system", "content": _build_system_content()},
             {"role": "user", "content": prompt},
         ]
 
         loop = asyncio.get_event_loop()
+        _prev_tools_supported = _TOOLS_SUPPORTED
 
         for iteration in range(self.max_tool_iterations):
             try:
+                # If tools support status changed, rebuild system message
+                if _TOOLS_SUPPORTED != _prev_tools_supported:
+                    _prev_tools_supported = _TOOLS_SUPPORTED
+                    exec_messages[0] = {"role": "system", "content": _build_system_content()}
+
                 _msgs = list(exec_messages)
                 api_result = await loop.run_in_executor(
                     None,
                     lambda: call_api_with_retry(_msgs, tools=TOOL_SCHEMAS),
                 )
                 text, tool_calls = _extract_cf_response(api_result)
+
+                # After first call, check if tools support changed (fallback happened)
+                if _TOOLS_SUPPORTED != _prev_tools_supported:
+                    _prev_tools_supported = _TOOLS_SUPPORTED
+                    exec_messages[0] = {"role": "system", "content": _build_system_content()}
 
                 if tool_calls:
                     step_done = False
@@ -1020,10 +1151,11 @@ class DzeckAgent:
             message=user_message,
         )
         summarize_system = (
-            "You are Dzeck, a helpful AI assistant. "
-            "Write a clear, natural summary in plain text. "
-            "Never output JSON or code blocks. "
-            "Use the same language as the user."
+            "Kamu adalah Dzeck, asisten AI yang membantu. "
+            "Tulis ringkasan yang jelas dan natural dalam teks biasa. "
+            "JANGAN pernah keluarkan JSON atau code block. "
+            "Gunakan bahasa yang sama dengan user (default Bahasa Indonesia). "
+            "Langsung tulis teksnya saja tanpa format JSON apapun."
         )
         messages = [
             {"role": "system", "content": summarize_system},
@@ -1085,9 +1217,9 @@ class DzeckAgent:
         """Respond directly without Plan-Act for simple queries (real-time streaming)."""
         messages = [
             {"role": "system", "content": (
-                "You are Dzeck, an AI assistant. Respond naturally and helpfully. "
-                "Be concise but informative. Respond in the same language as the user. "
-                "Do NOT output JSON — respond with plain text only."
+                "Kamu adalah Dzeck, asisten AI yang membantu. Balas secara alami dan bermanfaat dalam Bahasa Indonesia. "
+                "Gunakan bahasa yang sama dengan user jika user menggunakan bahasa lain. "
+                "Jangan keluarkan JSON — balas dengan teks biasa saja."
             )},
             {"role": "user", "content": user_message},
         ]

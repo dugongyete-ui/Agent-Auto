@@ -3,6 +3,8 @@ import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import * as fs from "fs";
 import * as path from "path";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const qrcode = require("qrcode-terminal") as { generate: (text: string, opts: object, cb: (qr: string) => void) => void };
 
 // Load .env file if it exists (supports local dev and APK builds)
 (function loadDotEnv() {
@@ -275,6 +277,45 @@ function setupErrorHandler(app: express.Application) {
   });
 }
 
+function printExpoQR(port: number): void {
+  try {
+    // Resolve the public host for Expo Go
+    const replitDomain = process.env.REPLIT_DEV_DOMAIN || "";
+    const replitDomains = process.env.REPLIT_DOMAINS || "";
+
+    let host = "";
+    if (replitDomain) {
+      host = replitDomain;
+    } else if (replitDomains) {
+      host = replitDomains.split(",")[0].trim();
+    }
+
+    if (!host) return; // Can't generate QR without a public domain
+
+    // Expo Go URL: exp:// uses port 80 when accessed via Replit proxy
+    const expoUrl = `exp://${host}`;
+    const webUrl = `https://${host}`;
+
+    log("");
+    log("╔════════════════════════════════════════╗");
+    log("║       Dzeck AI - Expo Go QR Code       ║");
+    log("╚════════════════════════════════════════╝");
+    log("");
+    log(`  Scan QR di bawah dengan aplikasi Expo Go`);
+    log(`  atau buka: ${webUrl}`);
+    log("");
+
+    qrcode.generate(expoUrl, { small: true }, (qr: string) => {
+      log(qr);
+      log(`  URL Expo Go: ${expoUrl}`);
+      log(`  URL Browser: ${webUrl}`);
+      log("");
+    });
+  } catch (e) {
+    // QR code generation is optional — don't crash server
+  }
+}
+
 (async () => {
   setupCors(app);
   setupBodyParsing(app);
@@ -295,6 +336,7 @@ function setupErrorHandler(app: express.Application) {
     },
     () => {
       log(`express server serving on port ${port}`);
+      printExpoQR(port);
     },
   );
 

@@ -13,7 +13,7 @@ Stage 5: fallback - returns error with details
 """
 import re
 import json
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, Union
 
 
 class RobustJsonParser:
@@ -32,12 +32,22 @@ class RobustJsonParser:
     """
 
     @staticmethod
-    def parse(text: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    def parse(text: Any) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """Parse text into JSON using multi-stage repair pipeline.
         
         Returns:
             Tuple of (parsed_dict or None, error_message or None)
         """
+        # Safety: handle non-string inputs (e.g. dict/list from llama-4-scout)
+        if isinstance(text, dict):
+            return text, None
+        if isinstance(text, list):
+            return None, "Input is a list, not a dict"
+        if text is None:
+            return None, "Empty input"
+        if not isinstance(text, str):
+            text = str(text)
+
         if not text or not text.strip():
             return None, "Empty input"
 

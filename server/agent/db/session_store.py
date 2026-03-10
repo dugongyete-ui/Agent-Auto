@@ -49,12 +49,16 @@ class SessionStore:
         self._connected = False
 
     async def connect(self) -> bool:
-        """Connect to MongoDB. Returns True on success."""
+        """Connect to MongoDB. Returns True on success. Only attempts once."""
+        if hasattr(self, '_connect_attempted') and self._connect_attempted:
+            return self._connected
+        self._connect_attempted = True
+
         if not _motor_available:
             logger.warning("[SessionStore] motor not available, skipping MongoDB connect.")
             return False
         if not self._uri:
-            logger.warning("[SessionStore] MONGODB_URI not set, skipping connect.")
+            logger.warning("[SessionStore] MONGODB_URI not set, sessions will be in-memory only.")
             return False
         try:
             self._client = AsyncIOMotorClient(
@@ -69,10 +73,10 @@ class SessionStore:
             await self._client.admin.command("ping")
             await self._ensure_indexes()
             self._connected = True
-            logger.info("[SessionStore] Connected to MongoDB Atlas.")
+            logger.info("[SessionStore] Connected to MongoDB.")
             return True
         except Exception as e:
-            logger.error("[SessionStore] MongoDB connection failed: %s", e)
+            logger.warning("[SessionStore] MongoDB unavailable (sessions will be in-memory): %s", e)
             self._connected = False
             return False
 
