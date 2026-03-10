@@ -23,8 +23,8 @@ if (E2B_ENABLED) {
 function getCFConfig() {
   const accountId = process.env.CF_ACCOUNT_ID || "";
   const gatewayName = process.env.CF_GATEWAY_NAME || "";
-  const model = process.env.CF_MODEL || "@cf/meta/llama-3-8b-instruct";
-  const agentModel = process.env.CF_AGENT_MODEL || "@cf/meta/llama-3.1-70b-instruct";
+  const model = process.env.CF_MODEL || "@cf/qwen/qwen3-30b-a3b-fp8";
+  const agentModel = process.env.CF_AGENT_MODEL || "@cf/meta/llama-4-scout-17b-16e-instruct";
   const apiKey = process.env.CF_API_KEY || "";
   const cfPath = `/v1/${accountId}/${gatewayName}/workers-ai/run/${model}`;
   return { cfPath, apiKey, model, agentModel };

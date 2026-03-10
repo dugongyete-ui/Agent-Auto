@@ -88,10 +88,10 @@ waitForPort = 5000
 [userenv.shared]
 CF_ACCOUNT_ID = "6c807fe58ad83714e772403cd528dbeb"
 CF_GATEWAY_NAME = "dzeck"
-CF_MODEL = "@cf/meta/llama-3-8b-instruct"
 REDIS_PORT = "16364"
 API_KEY = "YsjNngJW0aFPVNSxuCCANgzTePXfiOSHu5w-V62h"
 SESSION_TTL_HOURS = "24"
 MAX_AGENT_STEPS = "20"
 PLAYWRIGHT_ENABLED = "true"
-CF_AGENT_MODEL = "@cf/meta/llama-3.1-70b-instruct"
+CF_MODEL = "@cf/qwen/qwen3-30b-a3b-fp8"
+CF_AGENT_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"

@@ -34,7 +34,7 @@ _load_dotenv()
 def _get_cf_url() -> str:
     account_id = os.environ.get("CF_ACCOUNT_ID", "")
     gateway_name = os.environ.get("CF_GATEWAY_NAME", "")
-    model = os.environ.get("CF_MODEL", "@cf/meta/llama-3-8b-instruct")
+    model = os.environ.get("CF_MODEL", "@cf/qwen/qwen3-30b-a3b-fp8")
     return (
         "https://gateway.ai.cloudflare.com/v1/"
         "{}/{}/workers-ai/run/{}".format(account_id, gateway_name, model)

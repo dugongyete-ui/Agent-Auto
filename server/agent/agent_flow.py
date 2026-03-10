@@ -103,7 +103,7 @@ def _get_cf_url() -> str:
     model = (
         os.environ.get("CF_AGENT_MODEL")
         or os.environ.get("CF_MODEL")
-        or "@cf/meta/llama-3.1-70b-instruct"
+        or "@cf/meta/llama-4-scout-17b-16e-instruct"
     )
     return (
         "https://gateway.ai.cloudflare.com/v1/"
