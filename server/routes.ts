@@ -414,7 +414,7 @@ export async function registerRoutes(app: any): Promise<Server> {
       const xvfb = findBin("Xvfb");
       const x11vnc = findBin("x11vnc");
       const DISPLAY = ":10";
-      const VNC_PORT = "5910";
+      const VNC_PORT = "5900";
       const WS_PORT = "6081";
 
       // 1. Start Xvfb
@@ -493,7 +493,7 @@ export async function registerRoutes(app: any): Promise<Server> {
   // ─── VNC status endpoint ──────────────────────────────────────────────────
   app.get("/api/vnc/status", (_req: any, res: any) => {
     const wsPort = 6081;
-    const vncPort = 5910;
+    const vncPort = 5900;
     const tcpCheck = net.createConnection({ port: vncPort, host: "127.0.0.1" });
     tcpCheck.setTimeout(800);
     tcpCheck.on("connect", () => {
