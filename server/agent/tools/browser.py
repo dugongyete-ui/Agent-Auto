@@ -263,8 +263,27 @@ class PlaywrightSession:
             return False
         try:
             from playwright.sync_api import sync_playwright
+            import time as _time
 
             cdp_url = os.environ.get("DZECK_CDP_URL", "")
+
+            if not cdp_url:
+                logger.info("[Browser] No CDP URL yet — waiting up to 15s for VNC/Chromium to start...")
+                for _wait_i in range(15):
+                    _time.sleep(1)
+                    cdp_url = os.environ.get("DZECK_CDP_URL", "")
+                    if cdp_url:
+                        logger.info("[Browser] CDP URL appeared: %s", cdp_url)
+                        break
+                    try:
+                        import urllib.request
+                        urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=2)
+                        cdp_url = "http://127.0.0.1:9222"
+                        logger.info("[Browser] Detected CDP at port 9222 (env not set)")
+                        break
+                    except Exception:
+                        pass
+
             display = os.environ.get("DISPLAY", "") or os.environ.get("DZECK_VNC_DISPLAY", "")
 
             self._pw = sync_playwright().start()
@@ -272,6 +291,12 @@ class PlaywrightSession:
             if cdp_url:
                 logger.info("[Browser] Connecting to persistent Chromium via CDP: %s", cdp_url)
                 try:
+                    try:
+                        import urllib.request
+                        urllib.request.urlopen(cdp_url + "/json/version", timeout=3)
+                    except Exception:
+                        logger.warning("[Browser] CDP endpoint not responding, waiting 5s...")
+                        _time.sleep(5)
                     self._browser = self._pw.chromium.connect_over_cdp(cdp_url)
                     self._cdp_mode = True
                     contexts = self._browser.contexts

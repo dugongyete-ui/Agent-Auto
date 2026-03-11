@@ -126,7 +126,7 @@ export async function registerRoutes(app: any): Promise<Server> {
   });
 
   // ─── Agent endpoint with SSE ───────────────────────────────────────────────
-  app.post("/api/agent", (req: any, res: any) => {
+  app.post("/api/agent", async (req: any, res: any) => {
     const { message, messages, attachments, session_id, resume_from_session } = req.body;
     if (!message && (!messages || !Array.isArray(messages))) {
       return res.status(400).json({ error: "message or messages array is required" });
@@ -138,8 +138,12 @@ export async function registerRoutes(app: any): Promise<Server> {
     const sid = session_id || randomUUID();
 
     vncTouch();
-    // Ensure VNC+CDP are running before spawning agent (fixes idle-restart gap)
-    ensureVncRunning().catch(() => {});
+
+    const vncOk = await ensureVncRunning().catch(() => false);
+    if (!vncOk) {
+      console.warn("[Agent] VNC startup failed — agent will attempt CDP probe fallback");
+    }
+
     const proc = spawn("python3", ["-u", "-m", "server.agent.agent_flow"], {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: process.cwd(),
@@ -439,6 +443,8 @@ export async function registerRoutes(app: any): Promise<Server> {
   process.env.DISPLAY = VNC_DISPLAY;
   process.env.DZECK_VNC_DISPLAY = VNC_DISPLAY;
 
+  let _vncStartPromise: Promise<boolean> | null = null;
+
   async function ensureVncRunning(): Promise<boolean> {
     if (_vncStarted) {
       const allAlive = _vncProcs.every((p: any) => p.exitCode === null);
@@ -446,11 +452,12 @@ export async function registerRoutes(app: any): Promise<Server> {
       _vncStarted = false;
       _vncProcs.length = 0;
     }
-    if (_vncStarting) {
-      return new Promise(resolve => setTimeout(() => resolve(_vncStarted), 5000));
+    if (_vncStarting && _vncStartPromise) {
+      return _vncStartPromise;
     }
     _vncStarting = true;
 
+    const doStart = async (): Promise<boolean> => {
     try {
       const { spawn: spawnProc, execSync } = require("node:child_process");
 
@@ -472,29 +479,43 @@ export async function registerRoutes(app: any): Promise<Server> {
       // Kill any stale processes on the display/port before starting
       try { execSync(`pkill -f "Xvfb ${VNC_DISPLAY}" 2>/dev/null; true`); } catch {}
       try { execSync(`pkill -f "x11vnc.*${VNC_PORT_NUM}" 2>/dev/null; true`); } catch {}
-      await new Promise(r => setTimeout(r, 800));
+      try { execSync(`pkill -f "chromium.*--remote-debugging-port" 2>/dev/null; true`); } catch {}
+      await new Promise(r => setTimeout(r, 1000));
 
       // Remove stale X lock files so Xvfb can start fresh
       const displayNum = VNC_DISPLAY.replace(":", "");
-      try {
-        const lockFile = `/tmp/.X${displayNum}-lock`;
-        const socketFile = `/tmp/.X11-unix/X${displayNum}`;
-        if (fs.existsSync(lockFile)) { fs.unlinkSync(lockFile); console.log(`[VNC] Removed stale lock: ${lockFile}`); }
-        if (fs.existsSync(socketFile)) { fs.unlinkSync(socketFile); console.log(`[VNC] Removed stale socket: ${socketFile}`); }
-      } catch (e: any) { console.warn("[VNC] Lock cleanup warning:", e.message); }
+      const cleanLocks = () => {
+        try {
+          const lockFile = `/tmp/.X${displayNum}-lock`;
+          const socketFile = `/tmp/.X11-unix/X${displayNum}`;
+          if (fs.existsSync(lockFile)) { fs.unlinkSync(lockFile); console.log(`[VNC] Removed stale lock: ${lockFile}`); }
+          if (fs.existsSync(socketFile)) { fs.unlinkSync(socketFile); console.log(`[VNC] Removed stale socket: ${socketFile}`); }
+        } catch (e: any) { console.warn("[VNC] Lock cleanup warning:", e.message); }
+      };
+      cleanLocks();
 
-      // 1. Start Xvfb
-      const xvfbProc = spawnProc(xvfb, [VNC_DISPLAY, "-screen", "0", "1280x720x24", "-ac", "-nolisten", "tcp"], {
-        detached: false, stdio: "ignore",
-        env: { ...process.env },
-      });
-      _vncProcs.push(xvfbProc);
-      await new Promise(r => setTimeout(r, 2000));
-
-      if (xvfbProc.exitCode !== null) {
-        console.error("[VNC] Xvfb failed to start");
+      // 1. Start Xvfb with retry
+      let xvfbProc: any = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        xvfbProc = spawnProc(xvfb, [VNC_DISPLAY, "-screen", "0", "1280x720x24", "-ac", "-nolisten", "tcp"], {
+          detached: false, stdio: "ignore",
+          env: { ...process.env },
+        });
+        await new Promise(r => setTimeout(r, 2000));
+        if (xvfbProc.exitCode === null) {
+          break;
+        }
+        console.warn(`[VNC] Xvfb attempt ${attempt}/3 failed, cleaning up and retrying...`);
+        try { execSync(`pkill -f "Xvfb ${VNC_DISPLAY}" 2>/dev/null; true`); } catch {}
+        await new Promise(r => setTimeout(r, 500));
+        cleanLocks();
+        await new Promise(r => setTimeout(r, 500));
+      }
+      if (!xvfbProc || xvfbProc.exitCode !== null) {
+        console.error("[VNC] Xvfb failed to start after 3 attempts");
         _vncStarting = false; return false;
       }
+      _vncProcs.push(xvfbProc);
 
       // 2. Draw solid background so display isn't black
       const xsetroot = findBin("xsetroot", "");
@@ -509,24 +530,32 @@ export async function registerRoutes(app: any): Promise<Server> {
       }
 
       // 3. Start x11vnc on VNC_PORT_NUM (avoids conflict with any system :5900)
-      const x11vncProc = spawnProc(x11vnc, [
-        "-display", VNC_DISPLAY, "-forever", "-shared", "-nopw",
-        "-rfbport", String(VNC_PORT_NUM),
-        "-noxdamage", "-cursor", "arrow",
-        "-xkb", "-noxrecord", "-noxfixes",
-        "-nowf", "-norc",
-        "-quiet",
-      ], {
-        detached: false, stdio: "ignore",
-        env: { ...process.env, DISPLAY: VNC_DISPLAY },
-      });
-      _vncProcs.push(x11vncProc);
-      await new Promise(r => setTimeout(r, 2000));
-
-      if (x11vncProc.exitCode !== null) {
-        console.error("[VNC] x11vnc failed to start");
+      let x11vncProc: any = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        x11vncProc = spawnProc(x11vnc, [
+          "-display", VNC_DISPLAY, "-forever", "-shared", "-nopw",
+          "-rfbport", String(VNC_PORT_NUM),
+          "-noxdamage", "-cursor", "arrow",
+          "-xkb", "-noxrecord", "-noxfixes",
+          "-nowf", "-norc",
+          "-quiet",
+        ], {
+          detached: false, stdio: "ignore",
+          env: { ...process.env, DISPLAY: VNC_DISPLAY },
+        });
+        await new Promise(r => setTimeout(r, 2000));
+        if (x11vncProc.exitCode === null) {
+          break;
+        }
+        console.warn(`[VNC] x11vnc attempt ${attempt}/3 failed, retrying...`);
+        try { execSync(`fuser -k ${VNC_PORT_NUM}/tcp 2>/dev/null; true`, { timeout: 2000 }); } catch {}
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      if (!x11vncProc || x11vncProc.exitCode !== null) {
+        console.error("[VNC] x11vnc failed to start after 3 attempts");
         _vncStarting = false; return false;
       }
+      _vncProcs.push(x11vncProc);
 
       // 4. Set DISPLAY for Playwright and sub-processes
       process.env.DISPLAY = VNC_DISPLAY;
@@ -636,14 +665,20 @@ export async function registerRoutes(app: any): Promise<Server> {
 
       _vncStarted = true;
       _vncStarting = false;
+      _vncStartPromise = null;
       vncTouch();
       console.log(`[VNC] Stack ready: DISPLAY=${VNC_DISPLAY} VNC_PORT=${VNC_PORT_NUM} (idle timeout: 10min)`);
       return true;
     } catch (err: any) {
       console.error("[VNC] Failed to start:", err.message);
       _vncStarting = false;
+      _vncStartPromise = null;
       return false;
     }
+    };
+
+    _vncStartPromise = doStart();
+    return _vncStartPromise;
   }
 
   app.post("/api/vnc/start", async (_req: any, res: any) => {
