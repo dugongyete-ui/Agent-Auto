@@ -916,7 +916,7 @@ class DzeckAgent:
                 from server.agent.tools.e2b_sandbox import get_sandbox
                 sb = get_sandbox()
                 cmd = _args.get("command", "")
-                workdir = _args.get("exec_dir", "/home/user/project")
+                workdir = _args.get("exec_dir", "/home/user/dzeck-ai")
                 timeout_s = _args.get("timeout", 90)
                 if not sb:
                     return execute_tool(_res, _args)

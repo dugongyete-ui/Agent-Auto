@@ -73,6 +73,22 @@ def _reset_browser() -> None:
         _browser = _make_session()
 
 
+def _detach_browser_on_exit() -> None:
+    """On process exit, detach from browser instead of killing it.
+    This keeps the Chromium window visible on VNC after agent finishes."""
+    global _browser
+    if _browser is not None and hasattr(_browser, 'detach'):
+        try:
+            _browser.detach()
+        except Exception:
+            pass
+    _browser = None
+
+
+import atexit
+atexit.register(_detach_browser_on_exit)
+
+
 # ─── E2B Browser Session ────────────────────────────────────────────────────
 
 class E2BBrowserSession:
@@ -293,6 +309,9 @@ class PlaywrightSession:
             if not self._headless:
                 launch_kwargs["env"] = env
 
+            launch_kwargs["handle_sigterm"] = False
+            launch_kwargs["handle_sighup"] = False
+
             self._browser = self._pw.chromium.launch(**launch_kwargs)
             self._context = self._browser.new_context(
                 viewport={"width": 1280, "height": 720},
@@ -410,6 +429,17 @@ class PlaywrightSession:
             return ToolResult(success=True, message="Screenshot saved to: {}".format(path), data={"save_path": path})
         except Exception as e:
             return ToolResult(success=False, message="Save screenshot failed: {}".format(e))
+
+    def detach(self) -> None:
+        """Detach from the browser without closing it — keeps Chromium visible on VNC.
+        We intentionally do NOT call self._pw.stop() or self._browser.close()
+        because that would kill the Chromium process. Instead we just drop
+        Python references so the process exits cleanly without teardown."""
+        self._page = None
+        self._context = None
+        self._browser = None
+        self._pw = None
+        self._started = False
 
     def close(self) -> None:
         try:

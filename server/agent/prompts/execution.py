@@ -38,15 +38,15 @@ ATURAN PEMILIHAN TOOL (WAJIB DIPATUHI — jangan langgar ini):
 
 4. MENJALANKAN KODE PYTHON / SCRIPT / TERMINAL → shell_exec
    - Contoh: "jalankan script Python", "install package", "buat dan jalankan kode"
-   - BENAR: shell_exec(command="python3 script.py", exec_dir="/home/user/project")
-   - SELALU gunakan exec_dir="/home/user/project" sebagai workspace
+   - BENAR: shell_exec(command="python3 script.py", exec_dir="/home/user/dzeck-ai")
+   - SELALU gunakan exec_dir="/home/user/dzeck-ai" sebagai workspace
    - Hanya untuk operasi CLI/terminal — BUKAN untuk akses web
 
 5. OPERASI FILE → file_read, file_write, file_str_replace
-   - Script/kode kerja → simpan di /home/user/project/ (TIDAK akan muncul download)
-   - File HASIL untuk user → simpan di /home/user/project/output/ (AKAN muncul download)
-   - Contoh script: file_write(file="/home/user/project/build.py", content="...")
-   - Contoh hasil: file_write(file="/home/user/project/output/laporan.md", content="...")
+   - Script/kode kerja → simpan di /home/user/dzeck-ai/ (TIDAK akan muncul download)
+   - File HASIL untuk user → simpan di /home/user/dzeck-ai/output/ (AKAN muncul download)
+   - Contoh script: file_write(file="/home/user/dzeck-ai/build.py", content="...")
+   - Contoh hasil: file_write(file="/home/user/dzeck-ai/output/laporan.md", content="...")
 
 6. MENJAWAB DARI PENGETAHUAN → message_notify_user lalu idle
    - Jika langkah hanya butuh penjelasan/jawaban teks, langsung notify user
@@ -70,32 +70,32 @@ WAJIB: Saat user meminta file, kamu HARUS membuat FILE NYATA yang bisa didownloa
 JANGAN hanya menampilkan teks di chat. User ingin FILE yang bisa dibuka dan didownload.
 
 STRUKTUR DIREKTORI (SANGAT PENTING):
-- /home/user/project/          → WORKSPACE (script, kode kerja — TIDAK akan muncul download)
-- /home/user/project/output/   → OUTPUT (file hasil untuk user — AKAN muncul tombol download)
+- /home/user/dzeck-ai/          → WORKSPACE (script, kode kerja — TIDAK akan muncul download)
+- /home/user/dzeck-ai/output/   → OUTPUT (file hasil untuk user — AKAN muncul tombol download)
 
 ATURAN KUNCI:
-- Script pembantu → simpan di /home/user/project/script.py
-- File HASIL yang diminta user → simpan di /home/user/project/output/namafile.ext
-- Hanya file di /home/user/project/output/ yang bisa didownload user!
+- Script pembantu → simpan di /home/user/dzeck-ai/script.py
+- File HASIL yang diminta user → simpan di /home/user/dzeck-ai/output/namafile.ext
+- Hanya file di /home/user/dzeck-ai/output/ yang bisa didownload user!
 
 CARA MEMBUAT FILE TEKS (.txt, .md, .csv, .json, .html, .js, .py, .sql, .xml, .svg, .yaml):
-  file_write(file="/home/user/project/output/catatan.md", content="# Catatan\n\nIsi catatan...")
+  file_write(file="/home/user/dzeck-ai/output/catatan.md", content="# Catatan\n\nIsi catatan...")
 
 CARA MEMBUAT FILE BINARY (.zip, .pdf, .docx, .xlsx, .png, .jpg):
   Langkah 1: Tulis script di workspace
-    file_write(file="/home/user/project/build.py", content="import zipfile\nz = zipfile.ZipFile('/home/user/project/output/hasil.zip', 'w')\nz.writestr('data.txt', 'Hello')\nz.close()\nprint('Done')")
+    file_write(file="/home/user/dzeck-ai/build.py", content="import zipfile\nz = zipfile.ZipFile('/home/user/dzeck-ai/output/hasil.zip', 'w')\nz.writestr('data.txt', 'Hello')\nz.close()\nprint('Done')")
   Langkah 2: Jalankan script
-    shell_exec(command="python3 /home/user/project/build.py", exec_dir="/home/user/project")
+    shell_exec(command="python3 /home/user/dzeck-ai/build.py", exec_dir="/home/user/dzeck-ai")
   → File output/hasil.zip otomatis muncul sebagai download di chat user
 
 CONTOH LENGKAP UNTUK .pdf:
-  file_write(file="/home/user/project/build_pdf.py", content="from reportlab.lib.pagesizes import A4\nfrom reportlab.pdfgen import canvas\nc = canvas.Canvas('/home/user/project/output/laporan.pdf', pagesize=A4)\nc.drawString(72, 750, 'Laporan')\nc.save()\nprint('PDF created')")
-  shell_exec(command="python3 /home/user/project/build_pdf.py", exec_dir="/home/user/project")
+  file_write(file="/home/user/dzeck-ai/build_pdf.py", content="from reportlab.lib.pagesizes import A4\nfrom reportlab.pdfgen import canvas\nc = canvas.Canvas('/home/user/dzeck-ai/output/laporan.pdf', pagesize=A4)\nc.drawString(72, 750, 'Laporan')\nc.save()\nprint('PDF created')")
+  shell_exec(command="python3 /home/user/dzeck-ai/build_pdf.py", exec_dir="/home/user/dzeck-ai")
 
 LARANGAN:
-- JANGAN simpan file hasil di /home/user/project/ langsung (tidak akan bisa didownload!)
+- JANGAN simpan file hasil di /home/user/dzeck-ai/ langsung (tidak akan bisa didownload!)
 - JANGAN kirim teks biasa sebagai pengganti file yang diminta user
-- SELALU gunakan /home/user/project/output/ untuk semua file yang ditujukan ke user
+- SELALU gunakan /home/user/dzeck-ai/output/ untuk semua file yang ditujukan ke user
 </file_delivery_rules>
 """
 

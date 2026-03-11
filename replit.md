@@ -13,7 +13,7 @@ Implements Manus-like autonomous agent architecture with class-based tools, Plan
 | Database | MongoDB Atlas (motor async driver) for session/agent persistence |
 | Cache | Redis (aioredis) for session state caching |
 | Browser | Playwright non-headless on VNC display :10 (visible LIVE) + HTTP fallback |
-| Shell Sandbox | E2B Cloud Sandbox (isolated, secure, timeout: 600s/10min with keepalive, workspace: /home/user/project) |
+| Shell Sandbox | E2B Cloud Sandbox (isolated, secure, timeout: 600s/10min with keepalive, workspace: /home/user/dzeck-ai) |
 | Architecture | DDD: Domain / Application / Infrastructure layers |
 | Session mgmt | Full session resume + rollback support |
 | Default Language | Bahasa Indonesia (semua prompt) |
@@ -49,7 +49,8 @@ Implements Manus-like autonomous agent architecture with class-based tools, Plan
 - **Manus-like Web UI**: Full redesign di `server/templates/web-chat.html` dengan Manus-style interface
   - **Welcome → Chat Transition**: switchToConv() uses dynamic DOM query to always remove current #empty-state; works correctly after startNewChat() recreates welcome screen
   - **Komputer Button**: Header button untuk toggle computer panel secara manual (bukan hanya saat tool dipanggil)
-  - **E2B Sandbox**: Shell/code tools run in isolated E2B cloud sandbox (timeout: 600s with keepalive every 3 iterations); Browser tools use local Playwright on VNC display :10 (visible LIVE). **Workspace/Output split**: `/home/user/project/` is workspace for scripts (NO download buttons), `/home/user/project/output/` is for deliverables (download buttons shown). File tools auto-sync between local and E2B: `file_write`/`file_str_replace` write to both E2B sandbox and local; only files targeting `output/` get download URLs. After `shell_exec`, only output/ files are synced back (binary-safe via base64). Dedupe by filename prevents duplicate download buttons. Auto-installs reportlab, python-docx, openpyxl, Pillow on sandbox creation.
+  - **E2B Sandbox**: Shell/code tools run in isolated E2B cloud sandbox (timeout: 600s with keepalive every 3 iterations); Browser tools use local Playwright on VNC display :10 (visible LIVE). **Workspace/Output split**: `/home/user/dzeck-ai/` is workspace for scripts (NO download buttons), `/home/user/dzeck-ai/output/` is for deliverables (download buttons shown). Terminal prompt shows `$dzeck-ai`. File tools auto-sync between local and E2B: `file_write`/`file_str_replace` write to both E2B sandbox and local; only files targeting `output/` get download URLs. After `shell_exec`, only output/ files are synced back (binary-safe via base64). Dedupe by filename prevents duplicate download buttons. Auto-installs reportlab, python-docx, openpyxl, Pillow on sandbox creation.
+  - **Browser Persistence**: Playwright launches with `handle_sigterm=False, handle_sighup=False`. On agent process exit, `atexit` handler detaches (not closes) the browser, keeping Chromium visible on VNC. User can interact with the browser after agent finishes until VNC idle timeout (10 min).
   - **Tool Panel Routing**: Browser tools → VNC panel (live desktop); ALL other tools (shell, file, search, message, MCP) → Sandbox Terminal panel
   - **Per-Session Isolation**: Each agent request gets `DZECK_SESSION_ID` env var. Files stored in `/tmp/dzeck_files/{session_id}/`. Download endpoint restricted to `/tmp/dzeck_files/` only (no arbitrary path access). Path traversal attacks blocked.
   - **File Delivery**: System prompt has `<file_delivery_rules>` section requiring agent to create actual downloadable files (.zip, .pdf, .docx, .xlsx, .png, .jpg, .svg, .csv, .json, .txt, .md, .html, .js, .py, .sql). Binary formats generated via shell_exec Python scripts.

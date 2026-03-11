@@ -36,8 +36,8 @@ def get_sandbox() -> Optional[Any]:
     return _sandbox
 
 
-WORKSPACE_DIR = "/home/user/project"
-OUTPUT_DIR = "/home/user/project/output"
+WORKSPACE_DIR = "/home/user/dzeck-ai"
+OUTPUT_DIR = "/home/user/dzeck-ai/output"
 
 
 def _create_sandbox() -> Optional[Any]:
@@ -94,7 +94,7 @@ def keepalive() -> bool:
             return False
 
 
-def run_command(command: str, workdir: str = "/home/user/project", timeout: int = 90) -> Dict[str, Any]:
+def run_command(command: str, workdir: str = "/home/user/dzeck-ai", timeout: int = 90) -> Dict[str, Any]:
     """Run a shell command in the E2B sandbox and return result dict."""
     sb = get_sandbox()
     if sb is None:

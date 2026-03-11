@@ -108,13 +108,13 @@ You are operating in an agent loop, iteratively completing tasks through these s
 CRITICAL: You MUST deliver actual downloadable files — not just text in chat.
 
 WORKSPACE STRUCTURE:
-- /home/user/project/          → workspace for scripts/code (NOT downloadable)
-- /home/user/project/output/   → deliverables for user (DOWNLOADABLE)
+- /home/user/dzeck-ai/          → workspace for scripts/code (NOT downloadable)
+- /home/user/dzeck-ai/output/   → deliverables for user (DOWNLOADABLE)
 
-Only files in /home/user/project/output/ will show download buttons to user.
+Only files in /home/user/dzeck-ai/output/ will show download buttons to user.
 
-TEXT FILES: file_write(file="/home/user/project/output/result.md", content="...")
-BINARY FILES: Write script to /home/user/project/build.py, then shell_exec to generate output to /home/user/project/output/
+TEXT FILES: file_write(file="/home/user/dzeck-ai/output/result.md", content="...")
+BINARY FILES: Write script to /home/user/dzeck-ai/build.py, then shell_exec to generate output to /home/user/dzeck-ai/output/
 
 MATCH FORMAT: If user asks for .pdf, deliver .pdf. If .docx, deliver .docx. Never substitute text.
 </file_delivery_rules>

@@ -36,12 +36,12 @@ FILE DELIVERY (CRITICAL):
 - JANGAN hanya jelaskan isi file di chat. User ingin FILE NYATA yang bisa didownload.
 
 STRUKTUR DIREKTORI WAJIB:
-- Script/kode kerja → /home/user/project/ (workspace, tidak muncul download)
-- File HASIL untuk user → /home/user/project/output/ (muncul tombol download)
+- Script/kode kerja → /home/user/dzeck-ai/ (workspace, tidak muncul download)
+- File HASIL untuk user → /home/user/dzeck-ai/output/ (muncul tombol download)
 
 ATURAN:
-- Text files: langkah pakai file_write ke /home/user/project/output/namafile.ext
-- Binary files (.pdf, .docx, .xlsx, .zip, .png): langkah 1 = tulis script di /home/user/project/, langkah 2 = jalankan script, output ke /home/user/project/output/
+- Text files: langkah pakai file_write ke /home/user/dzeck-ai/output/namafile.ext
+- Binary files (.pdf, .docx, .xlsx, .zip, .png): langkah 1 = tulis script di /home/user/dzeck-ai/, langkah 2 = jalankan script, output ke /home/user/dzeck-ai/output/
 - SELALU tambahkan langkah terakhir: "Kirim notifikasi ke user bahwa file sudah siap"
 """
 

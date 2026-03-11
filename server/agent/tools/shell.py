@@ -49,7 +49,7 @@ def _get_session(sid: str) -> Optional[Dict[str, Any]]:
         return _shell_sessions.get(sid)
 
 
-def _run_e2b(command: str, exec_dir: str = "/home/user/project", timeout: int = 90) -> Dict[str, Any]:
+def _run_e2b(command: str, exec_dir: str = "/home/user/dzeck-ai", timeout: int = 90) -> Dict[str, Any]:
     """Execute command via E2B cloud sandbox."""
     try:
         from server.agent.tools.e2b_sandbox import run_command
@@ -176,7 +176,7 @@ def _is_gui_command(command: str) -> Optional[str]:
     return None
 
 
-def shell_exec(command: str, exec_dir: str = "/home/user/project", id: str = "default") -> ToolResult:
+def shell_exec(command: str, exec_dir: str = "/home/user/dzeck-ai", id: str = "default") -> ToolResult:
     """Execute a shell command. Uses E2B cloud sandbox when available, else local."""
 
     # Intercept GUI commands early — they would hang forever in a headless environment
@@ -339,7 +339,7 @@ class ShellTool(BaseTool):
         ),
         parameters={
             "id": {"type": "string", "description": "Unique identifier of the target shell session (e.g. 'main', 'build', 'test')"},
-            "exec_dir": {"type": "string", "description": "Working directory for command execution. Default: /home/user/project"},
+            "exec_dir": {"type": "string", "description": "Working directory for command execution. Default: /home/user/dzeck-ai"},
             "command": {"type": "string", "description": "Shell command to execute (bash syntax supported)"},
         },
         required=["id", "exec_dir", "command"],

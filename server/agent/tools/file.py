@@ -165,7 +165,7 @@ def file_write(
 
         _e2b_enabled = bool(os.environ.get("E2B_API_KEY", ""))
         is_sandbox_path = file.startswith("/home/user")
-        is_output_path = "/output/" in file or file.startswith("/home/user/project/output")
+        is_output_path = "/output/" in file or file.startswith("/home/user/dzeck-ai/output")
 
         e2b_ok = False
         if _e2b_enabled:
@@ -278,7 +278,7 @@ def file_str_replace(
             except Exception:
                 pass
 
-        is_output_path = "/output/" in file or file.startswith("/home/user/project/output")
+        is_output_path = "/output/" in file or file.startswith("/home/user/dzeck-ai/output")
         is_deliverable = is_output_path or file.startswith("/tmp/dzeck_files")
 
         if is_deliverable:
