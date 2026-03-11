@@ -288,6 +288,12 @@
     .step-tools{padding:3px 0 3px 23px;display:none;flex-direction:column;gap:4px}
     .step-tools.open{display:flex}
 
+    /* Agent notify — inline progress note inside step card */
+    .agent-notify{display:flex;align-items:flex-start;gap:6px;padding:5px 8px;margin:2px 0;
+      background:var(--surface2);border-radius:8px;animation:fadeUp .15s ease}
+    .agent-notify-icon{flex-shrink:0;margin-top:1px;color:var(--text2);opacity:.7}
+    .agent-notify-text{font-size:12px;color:var(--text2);line-height:1.5;word-break:break-word}
+
     /* Tool chips */
     .tool-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px 3px 7px;
       border:1px solid var(--border);border-radius:999px;background:var(--pill-bg);
@@ -1956,6 +1962,26 @@ function handleEvent(evt) {
         S.aiBodyEl=null; S.aiContent='';
       }
       break;
+
+    case 'notify': {
+      const notifyText = evt.text || '';
+      if (!notifyText) break;
+      const stepId = S.currentStepId;
+      if (stepId) {
+        const toolsEl = document.getElementById(`st-${stepId}`);
+        if (toolsEl) {
+          openStep(stepId);
+          const note = document.createElement('div');
+          note.className = 'agent-notify';
+          note.innerHTML = `<span class="agent-notify-icon"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="7"/><line x1="8" y1="5" x2="8" y2="9"/><circle cx="8" cy="11.5" r=".7" fill="currentColor" stroke="none"/></svg></span><span class="agent-notify-text">${esc(notifyText)}</span>`;
+          toolsEl.appendChild(note);
+          scrollBottom();
+          break;
+        }
+      }
+      showToast(notifyText, 5000);
+      break;
+    }
 
     case 'files': {
       const flist = evt.files || [];

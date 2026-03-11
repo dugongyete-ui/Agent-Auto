@@ -829,8 +829,21 @@ class DzeckAgent:
             yield {"type": "__result__", "value": "Unknown tool '{}'.".format(fn_name)}
             return
 
-        # ── Special: message tools → emit as streaming chat bubbles, not tool cards ──
-        if resolved in ("message_notify_user", "message_ask_user"):
+        # ── Special: message_notify_user → emit as inline "notify" event (not a chat bubble) ──
+        # This prevents mid-execution notifications from rendering as final AI responses
+        if resolved == "message_notify_user":
+            text = fn_args.get("text", "") or fn_args.get("message", "")
+            if text:
+                yield make_event("notify", text=text)
+            _res = resolved
+            _args = dict(fn_args)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, lambda: execute_tool(_res, _args))
+            yield {"type": "__result__", "value": text or "Done"}
+            return
+
+        # ── Special: message_ask_user → emit as streaming chat bubble (user needs to respond) ──
+        if resolved == "message_ask_user":
             text = fn_args.get("text", "") or fn_args.get("message", "")
             if text:
                 yield make_event("message_start", role="assistant")
@@ -839,7 +852,6 @@ class DzeckAgent:
                     yield make_event("message_chunk", chunk=text[i:i + chunk_size], role="assistant")
                     await asyncio.sleep(0.008)
                 yield make_event("message_end", role="assistant")
-            # Execute the tool silently (returns ToolResult.success=True)
             _res = resolved
             _args = dict(fn_args)
             loop = asyncio.get_event_loop()
