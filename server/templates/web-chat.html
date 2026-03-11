@@ -375,8 +375,8 @@
 
     #tp-content{flex:1;min-height:0;display:flex;flex-direction:column;position:relative;overflow:hidden}
     #tp-browser-area{flex:1;position:relative;display:flex;align-items:stretch;overflow:hidden;touch-action:none}
-    #vnc-container{position:absolute;inset:0;background:#111;z-index:2;display:none;touch-action:none;-webkit-user-select:none;user-select:none}
-    #vnc-container canvas{width:100%!important;height:100%!important;object-fit:contain;touch-action:none}
+    #vnc-container{position:absolute;inset:0;background:#111;z-index:2;display:none;touch-action:none;-webkit-user-select:none;user-select:none;overflow:hidden}
+    #vnc-container canvas{display:block;touch-action:none;cursor:default;-webkit-user-select:none;user-select:none}
     #tp-screenshot{position:absolute;inset:0;object-fit:contain;width:100%;height:100%;
       background:var(--surface2);cursor:pointer;z-index:1;display:none}
     #tp-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -1414,6 +1414,183 @@ async function startVncIfNeeded() {
   } catch {}
 }
 
+function _setupVncMobileTouch() {
+  if (vncCont._dzeckTouchBound) return;
+  vncCont._dzeckTouchBound = true;
+
+  let _lastTap = 0;
+  let _tapTimer = null;
+  let _touchStartX = 0, _touchStartY = 0;
+  let _touchMoved = false;
+  let _scrolling = false;
+  let _pinchDist = 0;
+  let _rightClickTimer = null;
+
+  function _getVncCoords(touch) {
+    const canvas = vncCont.querySelector('canvas');
+    if (!canvas) return { x: touch.clientX, y: touch.clientY };
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      x: Math.round((touch.clientX - rect.left) * scaleX),
+      y: Math.round((touch.clientY - rect.top) * scaleY),
+    };
+  }
+
+  function _sendPointer(type, clientX, clientY, buttons) {
+    const canvas = vncCont.querySelector('canvas');
+    if (!canvas || !S.rfb || S.rfb.viewOnly) return;
+    try {
+      canvas.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, view: window,
+        clientX, clientY, button: buttons === 0 ? -1 : 0,
+        buttons, pointerId: 1, pointerType: 'mouse',
+        isPrimary: true, composed: true,
+      }));
+    } catch(e) {
+      canvas.dispatchEvent(new MouseEvent(
+        type === 'pointerdown' ? 'mousedown' :
+        type === 'pointerup'   ? 'mouseup'   :
+        type === 'pointermove' ? 'mousemove'  : 'click',
+        { bubbles: true, cancelable: true, view: window, clientX, clientY, button: 0, buttons }
+      ));
+    }
+  }
+
+  function _sendClick(clientX, clientY) {
+    _sendPointer('pointerdown', clientX, clientY, 1);
+    setTimeout(() => _sendPointer('pointerup', clientX, clientY, 0), 50);
+  }
+
+  function _sendRightClick(clientX, clientY) {
+    const canvas = vncCont.querySelector('canvas');
+    if (!canvas || !S.rfb || S.rfb.viewOnly) return;
+    try {
+      canvas.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true, cancelable: true, view: window,
+        clientX, clientY, button: 2, buttons: 2,
+      }));
+      canvas.dispatchEvent(new MouseEvent('mousedown', {
+        bubbles: true, cancelable: true, view: window,
+        clientX, clientY, button: 2, buttons: 2,
+      }));
+      setTimeout(() => canvas.dispatchEvent(new MouseEvent('mouseup', {
+        bubbles: true, cancelable: true, view: window,
+        clientX, clientY, button: 2, buttons: 0,
+      })), 50);
+    } catch {}
+  }
+
+  vncCont.addEventListener('touchstart', function(e) {
+    if (!S.isTakeover) {
+      if (e.type === 'touchstart') toggleTakeover();
+      return;
+    }
+    e.preventDefault();
+
+    _touchMoved = false;
+    _scrolling = false;
+
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      _pinchDist = Math.sqrt(dx*dx + dy*dy);
+      return;
+    }
+
+    const t = e.touches[0];
+    _touchStartX = t.clientX;
+    _touchStartY = t.clientY;
+
+    _rightClickTimer = setTimeout(() => {
+      if (!_touchMoved) {
+        _sendRightClick(t.clientX, t.clientY);
+        _rightClickTimer = null;
+      }
+    }, 600);
+
+    _sendPointer('pointermove', t.clientX, t.clientY, 0);
+    _sendPointer('pointerdown', t.clientX, t.clientY, 1);
+  }, { passive: false });
+
+  vncCont.addEventListener('touchmove', function(e) {
+    if (!S.isTakeover) return;
+    e.preventDefault();
+
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const delta = _pinchDist - dist;
+      if (Math.abs(delta) > 5 && S.rfb) {
+        const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const canvas = vncCont.querySelector('canvas');
+        if (canvas) canvas.dispatchEvent(new WheelEvent('wheel', {
+          bubbles: true, cancelable: true, view: window,
+          clientX: cx, clientY: cy,
+          deltaY: delta * 2, deltaMode: 0,
+        }));
+        _pinchDist = dist;
+      }
+      return;
+    }
+
+    const t = e.touches[0];
+    const dx = t.clientX - _touchStartX;
+    const dy = t.clientY - _touchStartY;
+    if (!_touchMoved && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+      _touchMoved = true;
+      if (_rightClickTimer) { clearTimeout(_rightClickTimer); _rightClickTimer = null; }
+    }
+    if (_touchMoved) {
+      _sendPointer('pointermove', t.clientX, t.clientY, 1);
+    }
+  }, { passive: false });
+
+  vncCont.addEventListener('touchend', function(e) {
+    if (!S.isTakeover) return;
+    e.preventDefault();
+
+    if (_rightClickTimer) { clearTimeout(_rightClickTimer); _rightClickTimer = null; }
+
+    const t = e.changedTouches[0];
+    _sendPointer('pointerup', t.clientX, t.clientY, 0);
+
+    if (!_touchMoved) {
+      const now = Date.now();
+      if (now - _lastTap < 300) {
+        clearTimeout(_tapTimer);
+        _lastTap = 0;
+        const canvas = vncCont.querySelector('canvas');
+        if (canvas && S.rfb && !S.rfb.viewOnly) {
+          canvas.dispatchEvent(new MouseEvent('dblclick', {
+            bubbles: true, cancelable: true, view: window,
+            clientX: t.clientX, clientY: t.clientY, button: 0, buttons: 0,
+          }));
+        }
+      } else {
+        _lastTap = now;
+        _tapTimer = setTimeout(() => { _lastTap = 0; }, 350);
+      }
+    }
+    _touchMoved = false;
+  }, { passive: false });
+
+  vncCont.addEventListener('touchcancel', function(e) {
+    if (!S.isTakeover) return;
+    e.preventDefault();
+    if (_rightClickTimer) { clearTimeout(_rightClickTimer); _rightClickTimer = null; }
+    const t = e.changedTouches[0];
+    if (t) _sendPointer('pointerup', t.clientX, t.clientY, 0);
+  }, { passive: false });
+
+  console.log('[VNC] Mobile touch handler set up');
+}
+
 async function connectVNC() {
   if (S.rfb) return;
   clearTimeout(_vncRetryTimer);
@@ -1476,22 +1653,7 @@ async function connectVNC() {
       tpLive.classList.add('on');
       tpStatus.textContent = S.isTakeover ? 'Mode interaktif — kamu mengontrol' : 'LIVE — klik "Ambil Kendali" untuk kontrol';
       console.log('[VNC] Connected to live desktop');
-
-      if (!vncCont._dzeckTouchBound) {
-        vncCont._dzeckTouchBound = true;
-        const vncTouchGuard = function(e) {
-          if (!S.isTakeover && e.type === 'touchstart') {
-            toggleTakeover();
-          }
-          if (S.isTakeover) {
-            e.stopPropagation();
-            e.preventDefault();
-          }
-        };
-        ['touchstart','touchmove','touchend','touchcancel'].forEach(evName => {
-          vncCont.addEventListener(evName, vncTouchGuard, { passive: false });
-        });
-      }
+      _setupVncMobileTouch();
     });
 
     S.rfb.addEventListener('disconnect', (e) => {

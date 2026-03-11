@@ -54,55 +54,56 @@ fi
 # ─── npm packages ─────────────────────────────────────────────────────────────
 print_step "Installing Node.js packages..."
 cd "$PROJECT_ROOT"
-npm install --no-audit --prefer-offline 2>&1 | grep -E "added|updated|packages" | head -3 || true
+npm install --legacy-peer-deps --no-audit 2>&1 | grep -E "added|updated|packages" | head -3 || true
 print_ok "Node.js packages ready"
 
 # ─── Python packages (host — agent core) ────────────────────────────────────
-print_step "Installing Python packages (host agent)..."
+print_step "Installing Python packages..."
 
 PIP_FLAGS=""
 if $PYTHON -m pip install --help 2>&1 | grep -q 'break-system'; then
   PIP_FLAGS="--break-system-packages"
 fi
 
+# Install from requirements.txt first (full list)
+if [ -f "$PROJECT_ROOT/requirements.txt" ]; then
+  echo "  Installing from requirements.txt..."
+  $PYTHON -m pip install $PIP_FLAGS -r "$PROJECT_ROOT/requirements.txt" -q 2>&1 | tail -3 || true
+  print_ok "requirements.txt packages installed"
+fi
+
+# Ensure critical packages are at required versions
 PYTHON_PACKAGES=(
   "pydantic>=2.0.0"
   "playwright>=1.40.0"
-  "e2b>=1.0.0"
+  "e2b>=2.0.0"
   "httpx>=0.24.0"
   "requests>=2.28.0"
-)
-
-PYTHON_PACKAGES_OPTIONAL=(
+  "aiohttp>=3.8.0"
+  "beautifulsoup4>=4.12.0"
   "redis>=5.0.0"
-  "motor>=3.7.0"
+  "motor>=3.0.0"
+  "flask>=3.0.0"
+  "flask-cors>=4.0.0"
+  "websockify>=0.10.0"
 )
 
 for pkg in "${PYTHON_PACKAGES[@]}"; do
   pkg_name="${pkg%%[>=<]*}"
-  echo -n "  Checking $pkg_name..."
-  if $PYTHON -m pip install $PIP_FLAGS "$pkg" -q 2>&1; then
-    print_ok "$pkg_name ready"
-  else
-    print_error "$pkg_name install FAILED — required for agent"
+  if ! $PYTHON -c "import ${pkg_name//-/_}" &>/dev/null 2>&1; then
+    echo -n "  Installing $pkg_name..."
+    $PYTHON -m pip install $PIP_FLAGS "$pkg" -q 2>&1 | tail -1 || true
+    print_ok "$pkg_name installed"
   fi
 done
 
-echo ""
-print_step "Installing optional Python packages..."
-for pkg in "${PYTHON_PACKAGES_OPTIONAL[@]}"; do
-  pkg_name="${pkg%%[>=<]*}"
-  echo -n "  Checking $pkg_name..."
-  if $PYTHON -m pip install $PIP_FLAGS "$pkg" -q 2>&1; then
-    print_ok "$pkg_name ready (optional: cache/sessions)"
-  else
-    print_warn "$pkg_name not installed — agent works without it"
-  fi
-done
+print_ok "All Python packages ready"
 
 # ─── Playwright browser ───────────────────────────────────────────────────────
 print_step "Installing Playwright browser (Chromium)..."
-if $PYTHON -m playwright install chromium --quiet 2>&1; then
+
+# Try to install without --with-deps (Replit doesn't support apt)
+if $PYTHON -m playwright install chromium 2>&1; then
   print_ok "Playwright Chromium ready"
   CHROME_BIN=""
   for search_dir in "chrome-linux64" "chrome-linux"; do
@@ -112,9 +113,10 @@ if $PYTHON -m playwright install chromium --quiet 2>&1; then
   if [ -n "$CHROME_BIN" ]; then
     print_ok "Chrome binary: $CHROME_BIN"
   else
-    print_warn "Chrome binary not found in .cache/ms-playwright — server will auto-detect at runtime"
+    print_warn "Chrome binary not found in .cache/ms-playwright"
   fi
 else
+  print_warn "Playwright chromium install skipped (system deps not available)"
   print_warn "Run manually: python3 -m playwright install chromium"
 fi
 
@@ -210,18 +212,14 @@ echo ""
 echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}${BOLD}║  Architecture — Tool Dispatch & Runtime                      ║${NC}"
 echo -e "${CYAN}${BOLD}╠══════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}${BOLD}║  Browser     → Persistent Chromium (CDP port 9222) on VNC    ║${NC}"
-echo -e "${CYAN}${BOLD}║               Agent connects via connect_over_cdp()          ║${NC}"
-echo -e "${CYAN}${BOLD}║               Browser stays visible after agent finishes     ║${NC}"
+echo -e "${CYAN}${BOLD}║  Browser     → VNC CDP (port 9222) > Headless > E2B > HTTP   ║${NC}"
 echo -e "${CYAN}${BOLD}║  Shell/Code  → E2B cloud sandbox (isolated, safe)            ║${NC}"
-echo -e "${CYAN}${BOLD}║  File I/O    → /home/user/dzeck-ai/ (workspace, no download) ║${NC}"
-echo -e "${CYAN}${BOLD}║               /home/user/dzeck-ai/output/ (deliverables, DL) ║${NC}"
+echo -e "${CYAN}${BOLD}║  File I/O    → /home/user/dzeck-ai/ (workspace)               ║${NC}"
 echo -e "${CYAN}${BOLD}║  Search      → DuckDuckGo (no API key needed)               ║${NC}"
-echo -e "${CYAN}${BOLD}║  MCP         → Cloudflare MCP (OAuth token required)         ║${NC}"
+echo -e "${CYAN}${BOLD}║  MCP         → Cloudflare MCP (OAuth token optional)         ║${NC}"
 echo -e "${CYAN}${BOLD}╠══════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}${BOLD}║  VNC Stack   → Xvfb :10 → Fluxbox (MouseFocus) → x11vnc     ║${NC}"
-echo -e "${CYAN}${BOLD}║               x11vnc :5910 (-xkb -noxrecord -noxfixes)       ║${NC}"
-echo -e "${CYAN}${BOLD}║  CDP         → Chromium --kiosk --remote-debugging-port=9222 ║${NC}"
+echo -e "${CYAN}${BOLD}║  VNC Stack   → Xvfb :10 → Fluxbox → x11vnc :5910            ║${NC}"
+echo -e "${CYAN}${BOLD}║  CDP         → Chromium --remote-debugging-port=9222         ║${NC}"
 echo -e "${CYAN}${BOLD}║  Sandbox Pkgs→ reportlab, python-docx, openpyxl, Pillow      ║${NC}"
 echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
 
@@ -239,8 +237,8 @@ echo -e "    ${GREEN}Chat:  @cf/qwen/qwen3-30b-a3b-fp8${NC}"
 echo -e "    ${GREEN}Agent: @cf/meta/llama-3.3-70b-instruct-fp8-fast${NC}"
 echo ""
 echo -e "  ${BOLD}Python host deps:${NC}"
-echo -e "    ${CYAN}pydantic, playwright, e2b, httpx, requests${NC}"
-echo -e "    ${CYAN}Optional: redis (cache), motor (sessions)${NC}"
+echo -e "    ${CYAN}pydantic, playwright, e2b, httpx, requests, aiohttp, beautifulsoup4${NC}"
+echo -e "    ${CYAN}Optional: redis (cache), motor (sessions), flask (web)${NC}"
 echo ""
 echo -e "  ${BOLD}E2B sandbox deps (auto-installed):${NC}"
 echo -e "    ${CYAN}reportlab, python-docx, openpyxl, Pillow${NC}"

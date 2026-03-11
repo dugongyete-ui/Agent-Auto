@@ -310,9 +310,44 @@ class PlaywrightSession:
             logger.warning("[Browser] CDP connect failed: %s", e)
             return False
 
+    def _stop_pw(self) -> None:
+        """Safely stop the playwright instance if it exists."""
+        if self._pw is not None:
+            try:
+                self._pw.stop()
+            except Exception:
+                pass
+            self._pw = None
+
+    def _launch_headless(self) -> bool:
+        """Launch a local headless Chromium as fallback."""
+        try:
+            chromium_exe = _find_chromium_executable()
+            launch_args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
+                           "--disable-setuid-sandbox"]
+            if chromium_exe:
+                self._browser = self._pw.chromium.launch(
+                    executable_path=chromium_exe, headless=True, args=launch_args)
+            else:
+                self._browser = self._pw.chromium.launch(headless=True, args=launch_args)
+            self._context = self._browser.new_context(
+                viewport={"width": 1280, "height": 720},
+                user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            )
+            self._page = self._context.new_page()
+            self._page.on("console", lambda msg: self.console_logs.append("[{}] {}".format(msg.type, msg.text)))
+            self._started = True
+            self._headless = True
+            logger.info("[Browser] Started local headless Chromium (fallback mode).")
+            return True
+        except Exception as e:
+            logger.warning("[Browser] Headless fallback failed: %s", e)
+            return False
+
     def start(self) -> bool:
         if not _playwright_available:
             return False
+        self._stop_pw()
         try:
             from playwright.sync_api import sync_playwright
 
@@ -328,16 +363,22 @@ class PlaywrightSession:
             logger.info("[Browser] CDP not available — requesting VNC/Chromium restart...")
             self._request_vnc_restart()
 
-            if self._wait_for_cdp(cdp_url, timeout=25):
+            if self._wait_for_cdp(cdp_url, timeout=20):
                 logger.info("[Browser] CDP available after restart at %s", cdp_url)
                 if self._connect_cdp(cdp_url):
                     return True
 
-            logger.error("[Browser] CDP still unavailable after restart — browser tools will not work")
+            logger.warning("[Browser] CDP unavailable — falling back to headless Chromium")
+            if self._launch_headless():
+                return True
+
+            logger.error("[Browser] All browser start methods failed")
+            self._stop_pw()
             self._started = False
             return False
         except Exception as e:
             logger.error("[Browser] Failed to start Playwright: %s", e)
+            self._stop_pw()
             self._started = False
             return False
 
@@ -462,10 +503,17 @@ class PlaywrightSession:
     def save_screenshot(self, path: str) -> ToolResult:
         if not self._ensure_alive():
             return ToolResult(success=False, message="No page loaded.")
+        local_path = _remap_to_local_path(path)
         try:
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            self._page.screenshot(path=path, full_page=False)
-            return ToolResult(success=True, message="Screenshot saved to: {}".format(path), data={"save_path": path})
+            parent = os.path.dirname(local_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            self._page.screenshot(path=local_path, full_page=False)
+            return ToolResult(
+                success=True,
+                message="Screenshot saved to: {}".format(local_path),
+                data={"save_path": local_path, "original_path": path},
+            )
         except Exception as e:
             return ToolResult(success=False, message="Save screenshot failed: {}".format(e))
 
@@ -638,27 +686,40 @@ def _install_playwright_chromium() -> bool:
         return False
 
 
+def _remap_to_local_path(path: str) -> str:
+    """Remap E2B sandbox paths to local writable paths when running locally."""
+    e2b_prefix = "/home/user/dzeck-ai"
+    if path.startswith(e2b_prefix):
+        rel = path[len(e2b_prefix):]
+        local = "/tmp/dzeck_workspace" + rel
+        return local
+    if path.startswith("/home/user/"):
+        rel = path[len("/home/user/"):]
+        return "/tmp/dzeck_workspace/" + rel
+    return path
+
+
 def _make_session() -> Any:
     """Create the best available browser session.
-    Priority: Local Playwright (with VNC display) > E2B > HTTP fallback.
-    Browser always runs locally so it is visible in the VNC viewer.
-    E2B is reserved for shell/code execution only.
+    Priority: Local Playwright (CDP/VNC > headless fallback) > E2B > HTTP fallback.
     """
     if _playwright_available and PLAYWRIGHT_ENABLED:
         sess = PlaywrightSession()
         if sess.start():
-            mode = "VNC non-headless" if not sess._headless else "headless"
+            mode = "VNC CDP" if not sess._headless else "headless"
             logger.info("[Browser] Using local Playwright (%s).", mode)
             return sess
-        logger.warning("[Browser] Local Playwright failed — trying auto-install...")
+        sess.disconnect()
+        logger.warning("[Browser] Local Playwright failed — trying auto-install chromium...")
         if _install_playwright_chromium():
             sess2 = PlaywrightSession()
             if sess2.start():
-                logger.info("[Browser] Playwright started after auto-install.")
+                mode2 = "VNC CDP" if not sess2._headless else "headless"
+                logger.info("[Browser] Playwright ready after auto-install (%s).", mode2)
                 return sess2
+            sess2.disconnect()
         logger.warning("[Browser] Local Playwright still unavailable.")
 
-    # E2B fallback: headless browser in cloud sandbox (no VNC visibility)
     if E2B_ENABLED:
         logger.info("[Browser] Falling back to E2B cloud browser (screenshots only).")
         return E2BBrowserSession()
