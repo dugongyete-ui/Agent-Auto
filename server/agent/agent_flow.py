@@ -1380,6 +1380,16 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                     if plan_event:
                         yield plan_event
 
+            # Mark any steps still in running/pending state as completed before
+            # emitting the final plan event so the UI stays in sync with the answer
+            for s in self.plan.steps:
+                if s.status in (ExecutionStatus.RUNNING, ExecutionStatus.PENDING):
+                    s.status = ExecutionStatus.COMPLETED
+                    s.success = True
+                    if not s.result:
+                        s.result = "Step completed"
+                    yield make_event("step", status=StepStatus.COMPLETED.value, step=s.to_dict())
+
             self.plan.status = ExecutionStatus.COMPLETED
             yield make_event("plan", status=PlanStatus.COMPLETED.value,
                              plan=safe_plan_dict(self.plan))

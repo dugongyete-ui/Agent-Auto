@@ -511,6 +511,19 @@ export async function registerRoutes(app: any): Promise<Server> {
 
   const httpServer = createServer(app);
 
+  // ─── Auto-start VNC at server boot so DISPLAY is set for all agent requests ─
+  setImmediate(() => {
+    ensureVncRunning().then((ok) => {
+      if (ok) {
+        console.log("[VNC] Auto-started VNC stack at server boot — browser will use display :10");
+      } else {
+        console.warn("[VNC] Auto-start failed — VNC display may be unavailable");
+      }
+    }).catch((e: any) => {
+      console.warn("[VNC] Auto-start error:", e?.message);
+    });
+  });
+
   // ─── WebSocket proxy for VNC (/vnc-ws → websockify :6081) ───────────────
   // Uses 'ws' WebSocketServer for reliable proxy (handles browser → VNC streaming)
   const wss = new WebSocketServer({ noServer: true });

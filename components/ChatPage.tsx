@@ -11,8 +11,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { ChatMessageBubble } from "./ChatMessage";
 import { ChatBox } from "./ChatBox";
 import { AgentThinking, AgentWorking } from "./AgentThinking";
+import { AgentPlanView } from "./AgentPlanView";
 import { apiService, type AgentEvent } from "@/lib/api-service";
-import type { ChatMessage, ChatAttachment } from "@/lib/chat";
+import type { ChatMessage, ChatAttachment, AgentPlan, AgentPlanStep } from "@/lib/chat";
 
 interface ToolItem {
   tool_call_id: string;
@@ -58,6 +59,8 @@ export function ChatPage({
   const cancelRef = useRef<(() => void) | null>(null);
   const streamingMsgIdRef = useRef<string | null>(null);
   const toolsRef = useRef<ToolItem[]>([]);
+  const planMsgIdRef = useRef<string | null>(null);
+  const currentPlanRef = useRef<AgentPlan | null>(null);
 
   useEffect(() => {
     toolsRef.current = tools;
@@ -80,13 +83,54 @@ export function ChatPage({
     }
 
     if (type === "plan") {
-      setThinking({ active: true, label: "Membuat rencana...", stepLabel: event.plan?.title });
+      const planStatus = event.status;
+      const planData = event.plan as AgentPlan | undefined;
+
+      if (planData && planStatus === "created" && !planMsgIdRef.current) {
+        // Plan created — add a plan card to the messages list
+        const planMsgId = `plan_${Date.now()}`;
+        planMsgIdRef.current = planMsgId;
+        currentPlanRef.current = planData;
+        const planMsg: ChatMessage = {
+          id: planMsgId,
+          role: "assistant",
+          content: "",
+          timestamp: Date.now(),
+          plan: planData,
+        };
+        setMessages(prev => [...prev, planMsg]);
+        setThinking({ active: true, label: planData.title || "Membuat rencana...", stepLabel: planData.title });
+      } else if (planData && planMsgIdRef.current) {
+        // Update existing plan card
+        currentPlanRef.current = planData;
+        setMessages(prev => prev.map(m =>
+          m.id === planMsgIdRef.current ? { ...m, plan: planData } : m
+        ));
+        if (planStatus === "completed") {
+          setThinking({ active: false, label: "" });
+        }
+      } else if (!planData) {
+        setThinking({ active: true, label: "Membuat rencana...", stepLabel: event.plan?.title });
+      }
       return;
     }
 
     if (type === "step") {
-      const step = event.step;
+      const step = event.step as AgentPlanStep | undefined;
       const status = event.status;
+
+      if (step && planMsgIdRef.current && currentPlanRef.current) {
+        // Update the step status inside the plan card
+        const updatedSteps = currentPlanRef.current.steps.map(s =>
+          s.id === step.id ? { ...s, ...step } : s
+        );
+        const updatedPlan: AgentPlan = { ...currentPlanRef.current, steps: updatedSteps };
+        currentPlanRef.current = updatedPlan;
+        setMessages(prev => prev.map(m =>
+          m.id === planMsgIdRef.current ? { ...m, plan: updatedPlan } : m
+        ));
+      }
+
       if (status === "running" && step?.description) {
         setThinking({ active: true, label: step.description, stepLabel: step.description });
       } else if (status === "completed" || status === "failed") {
@@ -250,6 +294,9 @@ export function ChatPage({
     setInputMessage("");
     setIsLoading(true);
     setTools([]);
+    // Reset plan tracking for new request
+    planMsgIdRef.current = null;
+    currentPlanRef.current = null;
     setThinking({ active: true, label: isAgentMode ? "Dzeck sedang berpikir..." : "Memikirkan jawaban..." });
 
     try {
@@ -332,9 +379,16 @@ export function ChatPage({
     setIsLoading(false);
   }, []);
 
-  const renderMessage = useCallback(({ item }: { item: ChatMessage }) => (
-    <ChatMessageBubble message={item} />
-  ), []);
+  const renderMessage = useCallback(({ item }: { item: ChatMessage }) => {
+    if (item.plan) {
+      return (
+        <View style={styles.planCardWrapper}>
+          <AgentPlanView plan={item.plan} />
+        </View>
+      );
+    }
+    return <ChatMessageBubble message={item} />;
+  }, []);
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
@@ -558,5 +612,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderWidth: 1,
     borderColor: "rgba(108,92,231,0.15)",
+  },
+  planCardWrapper: {
+    paddingHorizontal: 16,
+    paddingVertical: 4,
   },
 });
