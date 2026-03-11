@@ -8,7 +8,7 @@ Implements Manus-like autonomous agent architecture with class-based tools, Plan
 | Aspek | Implementation |
 |---|---|
 | Language | Python async (AsyncGenerator) |
-| LLM | Cloudflare Workers AI (llama-3.1-70b-instruct via AI Gateway) |
+| LLM | Cloudflare Workers AI (llama-3.3-70b-instruct-fp8-fast via AI Gateway) |
 | Framework | Pydantic BaseModel + async generator streaming |
 | Database | MongoDB Atlas (motor async driver) for session/agent persistence |
 | Cache | Redis (aioredis) for session state caching |
@@ -65,8 +65,8 @@ Implements Manus-like autonomous agent architecture with class-based tools, Plan
 CF_API_KEY=<cloudflare-api-key>
 CF_ACCOUNT_ID=6c807fe58ad83714e772403cd528dbeb
 CF_GATEWAY_NAME=dzeck
-CF_MODEL=@cf/meta/llama-3.1-70b-instruct
-CF_AGENT_MODEL=@cf/meta/llama-3.1-70b-instruct
+CF_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast
+CF_AGENT_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast
 MONGODB_URI=<mongodb-atlas-uri>
 REDIS_HOST=<redis-host>
 REDIS_PORT=16364
@@ -145,12 +145,13 @@ class MyTool(BaseTool):
 
 ## Python Dependencies
 
-- `pydantic>=2.0.0` - Pydantic BaseModel data models
-- `motor>=3.7.0` - Async MongoDB driver (AsyncIOMotorClient)
-- `redis>=5.0.0` - Redis async client
-- `playwright>=1.40.0` - Real browser automation (Chromium)
-- `beautifulsoup4>=4.12.0` - HTML parsing
-- `aiohttp` - Async HTTP client
+- `pydantic>=2.0.0` - Pydantic BaseModel data models (Plan, Step, Memory, ToolResult)
+- `playwright>=1.40.0` - Real browser automation (Chromium headless, screenshots)
+- `e2b>=0.17.0` - E2B cloud sandbox for isolated shell/code execution
+- `motor>=3.7.0` - Async MongoDB driver (optional, lazy import)
+- `redis>=5.0.0` - Redis async client (optional, lazy import)
+
+Note: `requests`, `aiohttp`, `beautifulsoup4` are NOT used — the codebase uses Python stdlib `urllib` + regex for HTTP/HTML parsing.
 
 ## Nix System Dependencies (for Playwright Chromium)
 

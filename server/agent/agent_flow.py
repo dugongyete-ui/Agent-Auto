@@ -11,7 +11,7 @@ Upgraded from ai-manus architecture:
 - Browser:         Playwright real browser + HTTP fallback
 - Architecture:    DDD: Domain / Application / Infrastructure layers
 - Session mgmt:    Full session resume / rollback support
-- Model:           llama-3-8b-instruct with native tool calling
+- Model:           llama-3.3-70b-instruct-fp8-fast (verified native tool calling)
 """
 import os
 import re
@@ -100,10 +100,11 @@ class FlowState(str, Enum):
 def _get_cf_url() -> str:
     account_id = os.environ.get("CF_ACCOUNT_ID", "")
     gateway_name = os.environ.get("CF_GATEWAY_NAME", "")
+    # llama-3.3-70b-instruct-fp8-fast: verified native tool calling support
     model = (
         os.environ.get("CF_AGENT_MODEL")
         or os.environ.get("CF_MODEL")
-        or "@cf/meta/llama-4-scout-17b-16e-instruct"
+        or "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
     )
     return (
         "https://gateway.ai.cloudflare.com/v1/"

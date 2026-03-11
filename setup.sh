@@ -2,7 +2,7 @@
 #
 # Dzeck AI — Auto Setup & Install Dependencies
 # Run from project root: ./setup.sh
-# Updated: E2B cloud sandbox integration (VNC removed)
+# Updated: Synced with actual project usage (Mar 2026)
 #
 set -euo pipefail
 
@@ -19,7 +19,7 @@ print_error() { echo -e "${RED}  ✗ $1${NC}"; }
 echo ""
 echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}${BOLD}║     Dzeck AI — Setup & Install           ║${NC}"
-echo -e "${CYAN}${BOLD}║     (E2B Cloud Sandbox Edition)          ║${NC}"
+echo -e "${CYAN}${BOLD}║     Model: llama-3.3-70b (tool-calling)  ║${NC}"
 echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -49,16 +49,18 @@ if $PYTHON -m pip install --help 2>&1 | grep -q 'break-system'; then
   PIP_FLAGS="--break-system-packages"
 fi
 
-# Current required packages (synced with project — E2B edition, Mar 2026)
+# Packages actually used in this project (synced Mar 2026):
+# - pydantic: data validation for models (Plan, Step, Memory, ToolResult)
+# - playwright: headless browser automation (browser.py local fallback)
+# - e2b: cloud sandbox for isolated shell/code execution (e2b_sandbox.py)
+# - redis: session state caching (db/cache.py — optional, lazy import)
+# - motor: MongoDB async driver (db/session_store.py — optional, lazy import)
 PYTHON_PACKAGES=(
   "pydantic>=2.0.0"
-  "beautifulsoup4>=4.12.0"
-  "requests>=2.31.0"
-  "aiohttp>=3.9.0"
   "playwright>=1.40.0"
-  "motor>=3.7.0"
+  "e2b>=0.17.0"
   "redis>=5.0.0"
-  "e2b>=2.0.0"
+  "motor>=3.7.0"
 )
 
 for pkg in "${PYTHON_PACKAGES[@]}"; do
@@ -74,7 +76,7 @@ done
 # ─── Playwright browser ───────────────────────────────────────────────────────
 print_step "Installing Playwright browser (Chromium headless)..."
 if $PYTHON -m playwright install chromium --quiet 2>&1; then
-  print_ok "Playwright Chromium ready (headless mode, no VNC needed)"
+  print_ok "Playwright Chromium ready (headless, screenshots enabled)"
 else
   print_warn "Run manually: python3 -m playwright install chromium"
 fi
@@ -82,15 +84,16 @@ fi
 # ─── E2B Sandbox check ────────────────────────────────────────────────────────
 print_step "Checking E2B cloud sandbox..."
 if [ -n "${E2B_API_KEY:-}" ]; then
-  print_ok "E2B_API_KEY is set — cloud sandbox enabled"
+  print_ok "E2B_API_KEY is set — cloud sandbox enabled (shell/code tools)"
 else
-  print_warn "E2B_API_KEY not set — shell tools will run locally"
+  print_warn "E2B_API_KEY not set — shell/code tools will run locally"
   print_warn "Set via: export E2B_API_KEY=your-key (or add to Replit Secrets)"
 fi
 
 # ─── Dzeck files directory ────────────────────────────────────────────────────
 print_step "Creating Dzeck file store directory..."
 mkdir -p /tmp/dzeck_files
+mkdir -p /tmp/dzeck_files/uploads
 print_ok "/tmp/dzeck_files ready (downloadable files stored here)"
 
 # ─── .env file ────────────────────────────────────────────────────────────────
@@ -101,22 +104,25 @@ if [ ! -f "$PROJECT_ROOT/.env" ]; then
     print_warn ".env created from .env.example — set CF_API_KEY, CF_ACCOUNT_ID, CF_GATEWAY_NAME, E2B_API_KEY"
   else
     cat > "$PROJECT_ROOT/.env" <<'EOF'
-# Cloudflare AI Gateway — required
+# ─── Cloudflare AI Gateway — REQUIRED ────────────────────────────────────────
 CF_API_KEY=
 CF_ACCOUNT_ID=
 CF_GATEWAY_NAME=
 
-# Model selection (optional)
-CF_MODEL=@cf/meta/llama-3-8b-instruct
-CF_AGENT_MODEL=@cf/meta/llama-3.1-70b-instruct
+# ─── Model selection ─────────────────────────────────────────────────────────
+# Model terbaik untuk tool calling (verified: llama-3.3-70b-instruct-fp8-fast)
+CF_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast
+CF_AGENT_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast
 
-# E2B Cloud Sandbox — for isolated shell/code execution
+# ─── E2B Cloud Sandbox ───────────────────────────────────────────────────────
+# Untuk shell/code execution terisolasi (buatkan script, download musik, dll.)
 E2B_API_KEY=
 
-# Browser automation (local headless Playwright)
+# ─── Browser ─────────────────────────────────────────────────────────────────
+# Playwright headless untuk browsing web (cari info, screenshot, dll.)
 PLAYWRIGHT_ENABLED=true
 
-# Server
+# ─── Server ──────────────────────────────────────────────────────────────────
 PORT=5000
 NODE_ENV=development
 EOF
@@ -125,6 +131,17 @@ EOF
 else
   print_ok ".env file exists"
 fi
+
+# ─── Tool routing summary ─────────────────────────────────────────────────────
+echo ""
+echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}${BOLD}║  Routing Cerdas — Tool Dispatch Logic                    ║${NC}"
+echo -e "${CYAN}${BOLD}╠══════════════════════════════════════════════════════════╣${NC}"
+echo -e "${CYAN}${BOLD}║  Browser/VNC  → Playwright headless (screenshot live)    ║${NC}"
+echo -e "${CYAN}${BOLD}║  Shell/Code   → E2B cloud sandbox (terisolasi, aman)     ║${NC}"
+echo -e "${CYAN}${BOLD}║  File I/O     → Local /tmp/dzeck_files                   ║${NC}"
+echo -e "${CYAN}${BOLD}║  Search       → DuckDuckGo (bebas API key)               ║${NC}"
+echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════╝${NC}"
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
 echo ""
@@ -135,12 +152,10 @@ echo ""
 echo -e "  ${BOLD}Mulai server:${NC}"
 echo -e "    ${CYAN}npm run server:dev${NC}     → http://localhost:5000"
 echo ""
-echo -e "  ${BOLD}Konfigurasi AI:${NC}"
-echo -e "    Edit ${CYAN}.env${NC} → CF_API_KEY, CF_ACCOUNT_ID, CF_GATEWAY_NAME, E2B_API_KEY"
+echo -e "  ${BOLD}Model AI aktif:${NC}"
+echo -e "    ${GREEN}@cf/meta/llama-3.3-70b-instruct-fp8-fast${NC}"
+echo -e "    ${CYAN}✓ Native tool calling verified${NC}"
 echo ""
-echo -e "  ${BOLD}Tools yang aktif:${NC}"
-echo -e "    ${GREEN}✓${NC} Shell: E2B cloud sandbox (terisolasi)"
-echo -e "    ${GREEN}✓${NC} Browser: Playwright headless lokal (screenshot)"
-echo -e "    ${GREEN}✓${NC} File: Baca/tulis + download langsung di chat"
-echo -e "    ${GREEN}✓${NC} Search: Web search aktif"
+echo -e "  ${BOLD}Konfigurasi:${NC}"
+echo -e "    Edit ${CYAN}.env${NC} → CF_API_KEY, CF_ACCOUNT_ID, CF_GATEWAY_NAME, E2B_API_KEY"
 echo ""

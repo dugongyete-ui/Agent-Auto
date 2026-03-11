@@ -11,6 +11,7 @@ import {
   Animated,
   Dimensions,
   ScrollView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { AgentPlan } from "@/lib/chat";
@@ -49,6 +50,86 @@ function LiveIndicator() {
   );
 }
 
+function ScanningAnimation() {
+  const translateY = useRef(new Animated.Value(0)).current;
+  const scanOpacity = useRef(new Animated.Value(0.7)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(translateY, { toValue: 80, duration: 1800, useNativeDriver: true }),
+        Animated.timing(translateY, { toValue: 0, duration: 1800, useNativeDriver: true }),
+      ]),
+    ).start();
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scanOpacity, { toValue: 0.2, duration: 900, useNativeDriver: true }),
+        Animated.timing(scanOpacity, { toValue: 0.7, duration: 900, useNativeDriver: true }),
+      ]),
+    ).start();
+  }, [translateY, scanOpacity]);
+
+  return (
+    <View style={styles.scanContainer}>
+      <View style={styles.scanGrid}>
+        {[...Array(6)].map((_, i) => (
+          <View key={i} style={styles.scanGridLine} />
+        ))}
+      </View>
+      <Animated.View
+        style={[styles.scanLine, { transform: [{ translateY }], opacity: scanOpacity }]}
+      />
+      <View style={styles.scanCornerTL} />
+      <View style={styles.scanCornerTR} />
+      <View style={styles.scanCornerBL} />
+      <View style={styles.scanCornerBR} />
+    </View>
+  );
+}
+
+function EmptyBrowserState({ isLoading, url }: { isLoading: boolean; url: string }) {
+  const dots = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!isLoading) return;
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(dots, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(dots, { toValue: 0, duration: 600, useNativeDriver: true }),
+      ]),
+    ).start();
+  }, [isLoading, dots]);
+
+  if (isLoading) {
+    return (
+      <View style={styles.emptyStateContainer}>
+        <ScanningAnimation />
+        <View style={styles.emptyStateTextBox}>
+          <View style={styles.loadingDots}>
+            <Animated.View style={[styles.dot, { opacity: dots }]} />
+            <Animated.View style={[styles.dot, { opacity: dots }]} />
+            <Animated.View style={[styles.dot, { opacity: dots }]} />
+          </View>
+          <Text style={styles.emptyStateTitle}>Memuat halaman</Text>
+          <Text style={styles.emptyStateUrl} numberOfLines={1}>
+            {url || "Menghubungkan ke browser..."}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.emptyStateContainer}>
+      <View style={styles.emptyIconWrapper}>
+        <Ionicons name="globe-outline" size={40} color="#2A2A35" />
+      </View>
+      <Text style={styles.emptyStateTitle}>Browser siap</Text>
+      <Text style={styles.emptyStateSubtitle}>Screenshot akan muncul saat agen membuka halaman</Text>
+    </View>
+  );
+}
+
 function PlanBottomBar({ plan }: { plan: AgentPlan }) {
   const [expanded, setExpanded] = useState(false);
   const completedCount = plan.steps.filter((s) => s.status === "completed").length;
@@ -56,8 +137,33 @@ function PlanBottomBar({ plan }: { plan: AgentPlan }) {
   const currentStep = plan.steps.find((s) => s.status === "running") ||
     plan.steps[plan.steps.length - 1];
 
+  const progress = totalCount > 0 ? completedCount / totalCount : 0;
+  const progressAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(progressAnim, {
+      toValue: progress,
+      duration: 400,
+      useNativeDriver: false,
+    }).start();
+  }, [progress, progressAnim]);
+
   return (
     <View style={styles.planBar}>
+      <View style={styles.progressBarTrack}>
+        <Animated.View
+          style={[
+            styles.progressBarFill,
+            {
+              width: progressAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: ["0%", "100%"],
+              }),
+            },
+          ]}
+        />
+      </View>
+
       <TouchableOpacity
         style={styles.planBarHeader}
         onPress={() => setExpanded(!expanded)}
@@ -128,6 +234,22 @@ function PlanBottomBar({ plan }: { plan: AgentPlan }) {
   );
 }
 
+function ToolBadge({ tool }: { tool: "browser" | "e2b" | "file" | "search" }) {
+  const config = {
+    browser: { icon: "globe-outline" as const, label: "Browser", color: "#6C5CE7" },
+    e2b: { icon: "terminal-outline" as const, label: "E2B Sandbox", color: "#FF9F0A" },
+    file: { icon: "document-outline" as const, label: "File", color: "#30D158" },
+    search: { icon: "search-outline" as const, label: "Search", color: "#0A84FF" },
+  };
+  const c = config[tool];
+  return (
+    <View style={[styles.toolBadge, { borderColor: c.color + "40" }]}>
+      <Ionicons name={c.icon} size={10} color={c.color} />
+      <Text style={[styles.toolBadgeText, { color: c.color }]}>{c.label}</Text>
+    </View>
+  );
+}
+
 function FullScreenBrowser({
   browserState,
   plan,
@@ -141,33 +263,38 @@ function FullScreenBrowser({
     <View style={styles.fullContainer}>
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
 
-      {/* Header */}
       <SafeAreaView style={styles.fullHeader}>
         <View style={styles.fullHeaderInner}>
           <TouchableOpacity onPress={onClose} style={styles.headerCloseBtn} activeOpacity={0.7}>
             <Ionicons name="close" size={20} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={styles.fullHeaderTitle}>Komputer Manus</Text>
-          <TouchableOpacity style={styles.headerCloseBtn} activeOpacity={0.7}>
-            <Ionicons name="scan-outline" size={18} color="#8E8E93" />
-          </TouchableOpacity>
+          <View style={styles.fullHeaderCenter}>
+            <Text style={styles.fullHeaderTitle}>Komputer Dzeck</Text>
+            <ToolBadge tool="browser" />
+          </View>
+          <View style={styles.headerCloseBtn}>
+            {browserState.isLoading ? (
+              <Ionicons name="sync" size={16} color="#6C5CE7" />
+            ) : (
+              <Ionicons name="scan-outline" size={18} color="#8E8E93" />
+            )}
+          </View>
         </View>
       </SafeAreaView>
 
-      {/* Browser viewport */}
       <View style={styles.browserViewport}>
-        {/* URL bar */}
         <View style={styles.browserUrlBar}>
           <Ionicons name="lock-closed" size={10} color="#34C759" />
           <Text style={styles.browserUrlText} numberOfLines={1}>
             {browserState.url || "about:blank"}
           </Text>
           {browserState.isLoading && (
-            <Ionicons name="sync" size={12} color="#6C5CE7" />
+            <View style={styles.loadingIndicator}>
+              <Ionicons name="sync" size={11} color="#6C5CE7" />
+            </View>
           )}
         </View>
 
-        {/* Screenshot or content */}
         <View style={styles.browserContent}>
           {browserState.screenshot ? (
             <Image
@@ -175,22 +302,14 @@ function FullScreenBrowser({
               style={styles.browserScreenshot}
               resizeMode="cover"
             />
-          ) : (
+          ) : browserState.content ? (
             <ScrollView style={styles.browserTextScroll}>
-              {browserState.content ? (
-                <Text style={styles.browserTextContent}>{browserState.content}</Text>
-              ) : (
-                <View style={styles.browserEmpty}>
-                  <Ionicons name="globe-outline" size={56} color="#2A2A30" />
-                  <Text style={styles.browserEmptyText}>
-                    {browserState.isLoading ? "Memuat halaman..." : "Belum ada halaman"}
-                  </Text>
-                </View>
-              )}
+              <Text style={styles.browserTextContent}>{browserState.content}</Text>
             </ScrollView>
+          ) : (
+            <EmptyBrowserState isLoading={browserState.isLoading} url={browserState.url} />
           )}
 
-          {/* "Ambil kendali" overlay button */}
           <View style={styles.takeControlOverlay}>
             <TouchableOpacity style={styles.takeControlBtn} activeOpacity={0.75}>
               <Ionicons name="camera-outline" size={15} color="#FFFFFF" />
@@ -199,7 +318,6 @@ function FullScreenBrowser({
           </View>
         </View>
 
-        {/* Bottom nav bar */}
         <View style={styles.navBar}>
           <TouchableOpacity style={styles.navBtn} activeOpacity={0.7}>
             <Ionicons name="play-skip-back" size={18} color="#8E8E93" />
@@ -211,7 +329,6 @@ function FullScreenBrowser({
         </View>
       </View>
 
-      {/* Plan bottom bar */}
       {plan && plan.steps.length > 0 && (
         <PlanBottomBar plan={plan} />
       )}
@@ -226,7 +343,6 @@ export function ComputerView({ browserState, plan, onClose }: ComputerViewProps)
 
   return (
     <>
-      {/* Compact inline card */}
       <TouchableOpacity
         style={styles.compactCard}
         onPress={() => setFullScreen(true)}
@@ -234,8 +350,9 @@ export function ComputerView({ browserState, plan, onClose }: ComputerViewProps)
       >
         <View style={styles.compactHeader}>
           <View style={styles.compactHeaderLeft}>
-            <Ionicons name="desktop-outline" size={14} color="#FF9F0A" />
-            <Text style={styles.compactTitle}>Komputer Manus</Text>
+            <Ionicons name="desktop-outline" size={14} color="#6C5CE7" />
+            <Text style={styles.compactTitle}>Komputer Dzeck</Text>
+            <ToolBadge tool="browser" />
           </View>
           <View style={styles.compactHeaderRight}>
             {browserState.isLoading ? (
@@ -255,8 +372,18 @@ export function ComputerView({ browserState, plan, onClose }: ComputerViewProps)
               resizeMode="cover"
             />
           ) : (
-            <View style={styles.compactNoScreenshot}>
-              <Ionicons name="globe-outline" size={24} color="#2C2C30" />
+            <View style={styles.compactEmptyState}>
+              {browserState.isLoading ? (
+                <>
+                  <ScanningAnimation />
+                  <Text style={styles.compactLoadingText}>Memuat halaman...</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="globe-outline" size={22} color="#2C2C38" />
+                  <Text style={styles.compactEmptyText}>Tap untuk membuka browser</Text>
+                </>
+              )}
             </View>
           )}
         </View>
@@ -266,10 +393,12 @@ export function ComputerView({ browserState, plan, onClose }: ComputerViewProps)
           <Text style={styles.compactUrl} numberOfLines={1}>
             {browserState.url || "about:blank"}
           </Text>
+          {browserState.isLoading && (
+            <Text style={styles.compactLoadingBadge}>loading</Text>
+          )}
         </View>
       </TouchableOpacity>
 
-      {/* Full screen modal */}
       <Modal
         visible={fullScreen}
         animationType="slide"
@@ -289,10 +418,10 @@ export function ComputerView({ browserState, plan, onClose }: ComputerViewProps)
 const styles = StyleSheet.create({
   // ─── Compact inline card ───────────────────────────────
   compactCard: {
-    backgroundColor: "#111115",
-    borderRadius: 12,
+    backgroundColor: "#0E0E13",
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#222228",
+    borderColor: "#1E1E28",
     overflow: "hidden",
     marginHorizontal: 16,
     marginVertical: 6,
@@ -302,15 +431,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#161619",
+    paddingVertical: 9,
+    backgroundColor: "#13131A",
     borderBottomWidth: 1,
-    borderBottomColor: "#1E1E24",
+    borderBottomColor: "#1E1E28",
   },
   compactHeaderLeft: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    flex: 1,
   },
   compactTitle: {
     fontFamily: "Inter_500Medium",
@@ -329,32 +459,52 @@ const styles = StyleSheet.create({
     backgroundColor: "#30D158",
   },
   compactBody: {
-    height: 120,
-    backgroundColor: "#0A0A0F",
+    height: 130,
+    backgroundColor: "#080810",
     overflow: "hidden",
   },
   compactScreenshot: {
     width: "100%",
     height: "100%",
   },
-  compactNoScreenshot: {
+  compactEmptyState: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    gap: 8,
+  },
+  compactLoadingText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    color: "#6C5CE7",
+  },
+  compactEmptyText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    color: "#3A3A45",
   },
   compactFooter: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 5,
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: "#0D0D12",
+    paddingVertical: 6,
+    backgroundColor: "#0B0B10",
   },
   compactUrl: {
     flex: 1,
     fontFamily: "monospace",
     fontSize: 10,
-    color: "#636366",
+    color: "#4A4A55",
+  },
+  compactLoadingBadge: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 9,
+    color: "#6C5CE7",
+    backgroundColor: "rgba(108,92,231,0.15)",
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
 
   // ─── Full screen modal ────────────────────────────────
@@ -372,11 +522,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
+  fullHeaderCenter: {
+    flex: 1,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+  },
   headerCloseBtn: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.06)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -388,29 +545,32 @@ const styles = StyleSheet.create({
   },
   browserViewport: {
     flex: 1,
-    backgroundColor: "#1A1A1F",
+    backgroundColor: "#0E0E14",
     marginHorizontal: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#2A2A30",
+    borderColor: "#1E1E2A",
     marginBottom: 8,
   },
   browserUrlBar: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "#111116",
+    backgroundColor: "#0B0B10",
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#222228",
+    borderBottomColor: "#1A1A22",
   },
   browserUrlText: {
     flex: 1,
     fontFamily: "monospace",
     fontSize: 11,
-    color: "rgba(255,255,255,0.55)",
+    color: "rgba(255,255,255,0.4)",
+  },
+  loadingIndicator: {
+    opacity: 0.8,
   },
   browserContent: {
     flex: 1,
@@ -429,18 +589,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#C0C0C8",
     lineHeight: 18,
-  },
-  browserEmpty: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingVertical: 60,
-  },
-  browserEmptyText: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 13,
-    color: "#3A3A40",
   },
   // "Ambil kendali" overlay
   takeControlOverlay: {
@@ -473,9 +621,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 24,
     paddingVertical: 10,
-    backgroundColor: "#111116",
+    backgroundColor: "#0B0B10",
     borderTopWidth: 1,
-    borderTopColor: "#222228",
+    borderTopColor: "#1A1A22",
   },
   navBtn: {
     padding: 4,
@@ -497,12 +645,152 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
 
+  // ─── Empty state ──────────────────────────────────────
+  emptyStateContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+    padding: 24,
+  },
+  emptyIconWrapper: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "#111118",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#1E1E28",
+  },
+  emptyStateTitle: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
+    color: "#6C6C78",
+  },
+  emptyStateSubtitle: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: "#3A3A45",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  emptyStateTextBox: {
+    alignItems: "center",
+    gap: 4,
+  },
+  emptyStateUrl: {
+    fontFamily: "monospace",
+    fontSize: 10,
+    color: "#4A4A58",
+    maxWidth: 200,
+    textAlign: "center",
+  },
+
+  // ─── Loading dots ─────────────────────────────────────
+  loadingDots: {
+    flexDirection: "row",
+    gap: 4,
+    marginBottom: 4,
+  },
+  dot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "#6C5CE7",
+  },
+
+  // ─── Scan animation ───────────────────────────────────
+  scanContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+    backgroundColor: "#0A0A14",
+    overflow: "hidden",
+    position: "relative",
+    borderWidth: 1,
+    borderColor: "#6C5CE730",
+  },
+  scanGrid: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0.08,
+  },
+  scanGridLine: {
+    height: 1,
+    backgroundColor: "#6C5CE7",
+    marginVertical: 13,
+  },
+  scanLine: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: "#6C5CE7",
+    shadowColor: "#6C5CE7",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    ...(Platform.OS === "android" ? { elevation: 4 } : {}),
+  },
+  scanCornerTL: {
+    position: "absolute",
+    top: 4,
+    left: 4,
+    width: 12,
+    height: 12,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderColor: "#6C5CE7",
+  },
+  scanCornerTR: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 12,
+    height: 12,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderColor: "#6C5CE7",
+  },
+  scanCornerBL: {
+    position: "absolute",
+    bottom: 4,
+    left: 4,
+    width: 12,
+    height: 12,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
+    borderColor: "#6C5CE7",
+  },
+  scanCornerBR: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    width: 12,
+    height: 12,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
+    borderColor: "#6C5CE7",
+  },
+
   // ─── Plan bottom bar ──────────────────────────────────
   planBar: {
-    backgroundColor: "#111115",
+    backgroundColor: "#0E0E13",
     borderTopWidth: 1,
-    borderTopColor: "#222228",
+    borderTopColor: "#1E1E28",
     paddingBottom: 8,
+  },
+  progressBarTrack: {
+    height: 2,
+    backgroundColor: "#1A1A22",
+  },
+  progressBarFill: {
+    height: 2,
+    backgroundColor: "#6C5CE7",
   },
   planBarHeader: {
     flexDirection: "row",
@@ -552,9 +840,26 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   planBarStepDone: {
-    color: "#444450",
+    color: "#3A3A45",
   },
   planBarStepRunning: {
     color: "#E8E8ED",
+  },
+
+  // ─── Tool badge ───────────────────────────────────────
+  toolBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    backgroundColor: "transparent",
+  },
+  toolBadgeText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 9,
+    letterSpacing: 0.2,
   },
 });
