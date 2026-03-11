@@ -468,8 +468,11 @@ def build_tool_content(tool_name: str, tool_result: ToolResult) -> Optional[Dict
             "type": "shell",
             "command": data.get("command", ""),
             "console": console,
+            "stdout": data.get("stdout", ""),
+            "stderr": data.get("stderr", ""),
             "return_code": data.get("return_code", 0),
             "id": data.get("id", ""),
+            "backend": data.get("backend", ""),
         }
     elif tool_name in ("info_search_web", "web_search"):
         return {"type": "search", "query": data.get("query", ""), "results": data.get("results", [])}
@@ -862,7 +865,10 @@ class DzeckAgent:
         _res = resolved
         _args = dict(fn_args)
 
-        if _res == "shell_exec" and not bool(os.environ.get("E2B_API_KEY", "")):
+        _is_shell_exec = _res == "shell_exec"
+        _is_e2b = bool(os.environ.get("E2B_API_KEY", ""))
+
+        if _is_shell_exec and not _is_e2b:
             import queue as _queue_mod
             from server.agent.tools.shell import set_stream_queue
             stream_q: "_queue_mod.Queue" = _queue_mod.Queue()
@@ -901,6 +907,67 @@ class DzeckAgent:
                     stream_lines.append(item)
             except _queue_mod.Empty:
                 pass
+
+            tool_result = await future
+        elif _is_shell_exec and _is_e2b:
+            import queue as _queue_mod
+            e2b_q: "_queue_mod.Queue" = _queue_mod.Queue()
+
+            def _run_e2b_streaming():
+                from server.agent.tools.e2b_sandbox import get_sandbox
+                sb = get_sandbox()
+                cmd = _args.get("command", "")
+                workdir = _args.get("exec_dir", "/home/user")
+                timeout_s = _args.get("timeout", 90)
+                if not sb:
+                    return execute_tool(_res, _args)
+                try:
+                    if workdir != "/home/user":
+                        sb.commands.run(f"mkdir -p {workdir}", timeout=10)
+                    result = sb.commands.run(
+                        cmd, cwd=workdir, timeout=timeout_s,
+                        on_stdout=lambda data: e2b_q.put(("stdout", data if isinstance(data, str) else getattr(data, 'line', str(data)))),
+                        on_stderr=lambda data: e2b_q.put(("stderr", data if isinstance(data, str) else getattr(data, 'line', str(data)))),
+                    )
+                    e2b_q.put(None)
+                    from server.agent.models.tool_result import ToolResult
+                    combined = ""
+                    if result.stdout and result.stdout.strip():
+                        combined += "stdout:\n{}".format(result.stdout)
+                    if result.stderr and result.stderr.strip():
+                        combined += "\nstderr:\n{}".format(result.stderr)
+                    combined += "\nreturn_code: {}".format(result.exit_code)
+                    return ToolResult(
+                        success=(result.exit_code == 0),
+                        message=combined,
+                        data={"stdout": result.stdout or "", "stderr": result.stderr or "",
+                              "return_code": result.exit_code, "command": cmd, "backend": "E2B"},
+                    )
+                except Exception as e:
+                    e2b_q.put(None)
+                    from server.agent.models.tool_result import ToolResult
+                    return ToolResult(
+                        success=False,
+                        message=f"E2B error: {e}",
+                        data={"stdout": "", "stderr": str(e), "return_code": -1, "command": cmd, "backend": "E2B"},
+                    )
+
+            future = loop.run_in_executor(None, _run_e2b_streaming)
+
+            while not future.done():
+                await asyncio.sleep(0.15)
+                batch = []
+                try:
+                    while True:
+                        item = e2b_q.get_nowait()
+                        if item is None:
+                            break
+                        batch.append(item)
+                except _queue_mod.Empty:
+                    pass
+                if batch:
+                    chunk = "\n".join(("[stderr] " if t == "stderr" else "") + l for t, l in batch)
+                    yield make_event("tool_stream", tool_call_id=tool_call_id, chunk=chunk)
 
             tool_result = await future
         else:

@@ -49,10 +49,11 @@ Implements Manus-like autonomous agent architecture with class-based tools, Plan
 - **Manus-like Web UI**: Full redesign di `server/templates/web-chat.html` dengan Manus-style interface
   - **Welcome → Chat Transition**: switchToConv() uses dynamic DOM query to always remove current #empty-state; works correctly after startNewChat() recreates welcome screen
   - **Komputer Button**: Header button untuk toggle computer panel secara manual (bukan hanya saat tool dipanggil)
-  - **E2B Sandbox**: Shell/code tools run in isolated E2B cloud sandbox (no VNC needed); Browser tools use local headless Playwright with screenshot streaming
-  - **Plan Cards**: Plan agent tampil sebagai expandable card dalam chat, real-time update
+  - **E2B Sandbox**: Shell/code tools run in isolated E2B cloud sandbox; Browser tools use local Playwright on VNC display :10 (visible LIVE)
+  - **Sandbox Terminal**: Shell tools show dark terminal panel (#tp-terminal-area) with real-time streaming output from E2B sandbox (not blank VNC). Commands displayed with `$ ` prefix, stdout/stderr color-coded
+  - **Plan Cards**: Plan agent tampil sebagai expandable card dalam chat, real-time update. Each plan has unique DOM prefix (plan.id + step.id) so multiple plans don't collide
   - **Tool Items**: Setiap tool call tampil dengan spinner (calling) → checkmark (called) → X (error)
-  - **Komputer Dzeck Panel**: Side panel yang bisa dibuka manual atau otomatis saat tool dipanggil, menampilkan browser screenshot real-time dari Playwright headless
+  - **Komputer Dzeck Panel**: Side panel — shows VNC for browser tools, Sandbox Terminal for shell/code/file tools
   - **Perencana Tab**: Overview semua plan steps dengan status (completed/running/pending)
   - **Clean Chat**: Hanya respons AI final yang tampil di chat, tool activity tersembunyi rapi di bawah steps
   - **Browser Screenshot**: Screenshot langsung dari Playwright browser muncul di tool card dan panel bawah

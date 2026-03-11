@@ -383,6 +383,19 @@
       height:100%;color:var(--muted);gap:9px;padding:20px;text-align:center;font-size:13px}
     #tp-empty svg{opacity:.4}
 
+    #tp-terminal-area{display:none;flex-direction:column;position:absolute;inset:0;z-index:5;background:#1a1a2e}
+    #tp-terminal-area.active{display:flex !important}
+    #tp-term-header{display:flex;align-items:center;gap:6px;padding:8px 12px;background:#12122a;
+      color:#8888aa;font-size:11px;font-weight:600;border-bottom:1px solid #2a2a4a;flex-shrink:0}
+    #tp-term-header svg{opacity:.6}
+    #tp-term-badge{background:#2a2a4a;color:#6c6cff;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;letter-spacing:.5px}
+    #tp-term-output{flex:1;margin:0;padding:10px 12px;font-family:'JetBrains Mono','Fira Code','Cascadia Code',monospace;
+      font-size:12px;line-height:1.6;color:#c8d6e5;overflow:auto;white-space:pre-wrap;word-break:break-all;
+      -webkit-overflow-scrolling:touch}
+    #tp-term-output .cmd{color:#6c6cff;font-weight:600}
+    #tp-term-output .out{color:#c8d6e5}
+    #tp-term-output .err{color:#ff6b6b}
+
     #tp-controls{display:none;align-items:center;gap:4px;padding:5px 8px;
       border-top:1px solid var(--border);flex-shrink:0;background:var(--surface2);overflow-x:auto;-webkit-overflow-scrolling:touch}
     #tp-controls.show{display:flex}
@@ -618,6 +631,14 @@
             Browser akan muncul saat Dzeck mulai bekerja
           </div>
         </div>
+        <div id="tp-terminal-area" style="display:none">
+          <div id="tp-term-header">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            <span>Sandbox Terminal</span>
+            <span id="tp-term-badge">E2B</span>
+          </div>
+          <pre id="tp-term-output"></pre>
+        </div>
       </div>
       <div id="tp-controls">
         <button class="tpc-btn" onclick="vncShowKeyboard()" title="Keyboard">
@@ -765,6 +786,7 @@ const S = {
   toolsByStep: {},
   currentStepId: null,
   plan: null,
+  planPrefix: '',
   planBarOpen: false,
   started: false,
 };
@@ -1088,17 +1110,18 @@ function getToolArg(fn, args) {
   return v ? v.substring(0,55) : '';
 }
 
-function createStepRow(step) {
+function createStepRow(step, domId) {
+  domId = domId || step.id;
   const wrap = document.createElement('div');
   wrap.className = 'msg-step';
-  wrap.id = `sw-${step.id}`;
+  wrap.id = `sw-${domId}`;
   wrap.innerHTML = `
-    <div class="step-row-inner" onclick="toggleStep('${step.id}')">
-      <div class="step-ico" id="si-${step.id}"></div>
-      <div class="step-desc" id="sd-${step.id}">${esc(step.description||'')}</div>
-      <span class="step-chev" id="sc-${step.id}">›</span>
+    <div class="step-row-inner" onclick="toggleStep('${domId}')">
+      <div class="step-ico" id="si-${domId}"></div>
+      <div class="step-desc" id="sd-${domId}">${esc(step.description||'')}</div>
+      <span class="step-chev" id="sc-${domId}">›</span>
     </div>
-    <div class="step-tools" id="st-${step.id}"></div>`;
+    <div class="step-tools" id="st-${domId}"></div>`;
   chatEl.appendChild(wrap);
   scrollBottom();
 }
@@ -1145,9 +1168,22 @@ function addToolChip(stepId, tcId, evt) {
   scrollBottom();
   S.toolEls[tcId] = { chip, type, label, fn };
 
-  // Show tool panel only when tool is called
   showToolPanel();
   updatePanelTool(type, label, arg, icon);
+
+  if (type==='shell'||type==='code') {
+    const cmd = evt.function_args?.command || arg || '';
+    if (cmd) {
+      const panelPre = document.getElementById('tp-term-output');
+      if (panelPre) {
+        const cmdSpan = document.createElement('span');
+        cmdSpan.className = 'cmd';
+        cmdSpan.textContent = '$ ' + cmd + '\n';
+        panelPre.appendChild(cmdSpan);
+        panelPre.scrollTop = panelPre.scrollHeight;
+      }
+    }
+  }
 }
 
 function updateToolChip(tcId, evt) {
@@ -1194,7 +1230,20 @@ function updateToolChip(tcId, evt) {
       tpUrlbar.style.display = 'flex';
     }
   }
-  if (tc?.type==='shell'&&tc.console) tpStatus.textContent = tc.console.substring(0,80);
+  if (tc?.type==='shell') {
+    if (tc.console) tpStatus.textContent = tc.console.substring(0,80);
+    const shellOut = evt.function_result || tc.stdout || tc.console || '';
+    if (shellOut && (ok || err)) {
+      const panelPre = document.getElementById('tp-term-output');
+      if (panelPre) {
+        const outSpan = document.createElement('span');
+        outSpan.className = err ? 'err' : 'out';
+        outSpan.textContent = shellOut.substring(0, 4000) + '\n';
+        panelPre.appendChild(outSpan);
+        panelPre.scrollTop = panelPre.scrollHeight;
+      }
+    }
+  }
 
   // ─── File download button ──────────────────────────────────────────────────
   if (tc?.type==='file' && tc.download_url) {
@@ -1218,9 +1267,12 @@ function updateToolChip(tcId, evt) {
 // ═══════════════════════════════════════════════════
 // TOOL PANEL
 // ═══════════════════════════════════════════════════
-function showToolPanel() {
+function showToolPanel(skipVnc) {
   toolPanel.classList.add('open');
   document.getElementById('computer-btn').classList.add('on');
+  if (skipVnc) return;
+  const termActive = document.getElementById('tp-terminal-area')?.classList.contains('active');
+  if (termActive) return;
   if (S.latestScreenshot && !S.rfb) {
     tpSS.src = S.latestScreenshot;
     tpSS.style.display = 'block';
@@ -1255,7 +1307,19 @@ function updatePanelTool(type, label, arg, icon) {
   document.getElementById('tp-tool-icon').innerHTML = icon;
   document.getElementById('tp-tool-fn').textContent = label;
   document.getElementById('tp-tool-arg').textContent = arg;
-  if (type==='browser') tpUrlbar.style.display = 'flex';
+  const termArea = document.getElementById('tp-terminal-area');
+  const browserArea = document.getElementById('tp-browser-area');
+  if (type==='shell'||type==='code'||type==='file') {
+    termArea.classList.add('active');
+    browserArea.style.display = 'none';
+    tpUrlbar.style.display = 'none';
+  } else if (type==='browser') {
+    termArea.classList.remove('active');
+    browserArea.style.display = '';
+    tpUrlbar.style.display = 'flex';
+  } else {
+    browserArea.style.display = '';
+  }
 }
 
 function updatePanelScreenshot(src, url) {
@@ -1518,6 +1582,7 @@ function vncSendClipboard() {
 // SSE EVENT HANDLER
 // ═══════════════════════════════════════════════════
 function rid() { return Math.random().toString(36).slice(2,9); }
+function sid(stepId) { return S.planPrefix ? S.planPrefix + '_' + stepId : stepId; }
 
 function handleEvent(evt) {
   if (!evt?.type) return;
@@ -1539,10 +1604,12 @@ function handleEvent(evt) {
       if ((status==='creating'||status==='created'||status==='running')&&plan) hideThinking();
       if ((status==='created'||status==='running')&&plan) {
         S.plan = plan;
+        S.planPrefix = plan.id || rid();
         if (S.aiBodyEl) { S.aiBodyEl.closest('.msg-ai')?.remove(); S.aiBodyEl=null; S.aiContent=''; }
         (plan.steps||[]).forEach(st => {
-          if (!document.getElementById(`sw-${st.id}`)) {
-            createStepRow(st); S.stepEls[st.id]=true; S.toolsByStep[st.id]=[];
+          const domId = sid(st.id);
+          if (!document.getElementById(`sw-${domId}`)) {
+            createStepRow(st, domId); S.stepEls[domId]=true; S.toolsByStep[domId]=[];
           }
         });
         buildPlanBar(plan);
@@ -1550,15 +1617,16 @@ function handleEvent(evt) {
       if (status==='updated'&&plan) {
         S.plan = plan;
         (plan.steps||[]).forEach(st => {
-          if (!document.getElementById(`sw-${st.id}`)) {
-            createStepRow(st); S.stepEls[st.id]=true; S.toolsByStep[st.id]=[];
+          const domId = sid(st.id);
+          if (!document.getElementById(`sw-${domId}`)) {
+            createStepRow(st, domId); S.stepEls[domId]=true; S.toolsByStep[domId]=[];
           }
         });
         updatePlanBarCount();
       }
       if (status==='completed'&&plan) {
         S.plan=plan; updatePlanBarCount();
-        (plan.steps||[]).forEach(st=>updateStepStatus(st.id, st.status||'completed'));
+        (plan.steps||[]).forEach(st=>updateStepStatus(sid(st.id), st.status||'completed'));
       }
       break;
     }
@@ -1566,19 +1634,20 @@ function handleEvent(evt) {
     case 'step': {
       const step = evt.step;
       if (!step) break;
-      S.currentStepId = step.id;
-      if (!document.getElementById(`sw-${step.id}`)) {
-        createStepRow(step); S.stepEls[step.id]=true; S.toolsByStep[step.id]=[];
+      const domId = sid(step.id);
+      S.currentStepId = domId;
+      if (!document.getElementById(`sw-${domId}`)) {
+        createStepRow(step, domId); S.stepEls[domId]=true; S.toolsByStep[domId]=[];
       }
       const s = step.status||'';
-      if (s==='running') { updateStepStatus(step.id,'running'); openStep(step.id); updatePlanMini(step.id,'running'); }
-      else if (s==='completed'||s==='failed') { updateStepStatus(step.id,s); updatePlanMini(step.id,s); updatePlanBarCount(); }
+      if (s==='running') { updateStepStatus(domId,'running'); openStep(domId); updatePlanMini(step.id,'running'); }
+      else if (s==='completed'||s==='failed') { updateStepStatus(domId,s); updatePlanMini(step.id,s); updatePlanBarCount(); }
       break;
     }
 
     case 'tool': {
       const tcId = evt.tool_call_id||evt.id||rid();
-      const stepId = evt.step_id||S.currentStepId;
+      const stepId = evt.step_id ? sid(evt.step_id) : S.currentStepId;
       const evtStatus = evt.status||'';
       if (!S.toolsByStep[stepId]) S.toolsByStep[stepId]=[];
       const exists = S.toolsByStep[stepId].includes(tcId);
@@ -1660,10 +1729,28 @@ function appendTerminalStream(tcId, chunk) {
   if (!tcId || !chunk) return;
   showToolPanel();
 
+  const panelPre = document.getElementById('tp-term-output');
+  if (panelPre) {
+    const lines = chunk.split('\n');
+    lines.forEach(line => {
+      const span = document.createElement('span');
+      if (line.startsWith('[stderr]')) {
+        span.className = 'err';
+        span.textContent = line.replace('[stderr] ', '') + '\n';
+      } else {
+        span.className = 'out';
+        span.textContent = line + '\n';
+      }
+      panelPre.appendChild(span);
+    });
+    panelPre.scrollTop = panelPre.scrollHeight;
+  }
+
   let termEl = document.getElementById(`term-${tcId}`);
   const parent = document.getElementById(`tc-${tcId}`)?.parentElement;
   if (!parent) {
-    tpStatus.textContent = chunk.split('\n').pop() || chunk;
+    const lastLine = chunk.split('\n').filter(Boolean).pop() || '';
+    if (lastLine) tpStatus.textContent = lastLine.substring(0, 80);
     return;
   }
   if (!termEl) {
@@ -1725,7 +1812,7 @@ function finalize() {
     S.plan.steps.forEach(st => {
       if (st.status !== 'completed' && st.status !== 'failed') {
         st.status = 'completed';
-        updateStepStatus(st.id, 'completed');
+        updateStepStatus(sid(st.id), 'completed');
         updatePlanMini(st.id, 'completed');
       }
     });
@@ -1756,8 +1843,14 @@ async function doSend(text, attachments) {
   appendUserMsg(text, attachments);
 
   S.plan=null; S.stepEls={}; S.toolEls={}; S.toolsByStep={}; S.currentStepId=null;
+  S.planPrefix = '';
   planBarEl.classList.remove('visible');
+  planMiniEl.innerHTML = '';
   tpToolInfo.style.display='none'; tpStatus.textContent='Memproses...';
+  const tpTermOut = document.getElementById('tp-term-output');
+  if (tpTermOut) tpTermOut.innerHTML = '';
+  document.getElementById('tp-terminal-area')?.classList.remove('active');
+  document.getElementById('tp-browser-area').style.display = '';
 
   setStreaming(true);
   try { showThinking(); } catch(e) { console.warn('[think]', e); }
