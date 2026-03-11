@@ -29,6 +29,20 @@ Tool routing hints to embed in step descriptions:
 - Search → "Cari informasi tentang X" → executor akan pakai info_search_web
 - Code / script execution → "Jalankan kode Python ..." → executor akan pakai shell_exec
 - File operations → "Buat/baca file ..." → executor akan pakai file_write/file_read
+
+FILE DELIVERY (CRITICAL):
+- Saat user meminta file (.md, .txt, .pdf, .docx, .xlsx, .zip, .csv, .json, .html, .js, .py, .sql, .png, .jpg, .svg),
+  SELALU buat langkah untuk MEMBUAT FILE tersebut.
+- JANGAN hanya jelaskan isi file di chat. User ingin FILE NYATA yang bisa didownload.
+
+STRUKTUR DIREKTORI WAJIB:
+- Script/kode kerja → /home/user/project/ (workspace, tidak muncul download)
+- File HASIL untuk user → /home/user/project/output/ (muncul tombol download)
+
+ATURAN:
+- Text files: langkah pakai file_write ke /home/user/project/output/namafile.ext
+- Binary files (.pdf, .docx, .xlsx, .zip, .png): langkah 1 = tulis script di /home/user/project/, langkah 2 = jalankan script, output ke /home/user/project/output/
+- SELALU tambahkan langkah terakhir: "Kirim notifikasi ke user bahwa file sudah siap"
 """
 
 CREATE_PLAN_PROMPT = """Analyze the following user request and create an execution plan.

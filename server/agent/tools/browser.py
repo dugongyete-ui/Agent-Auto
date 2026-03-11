@@ -109,11 +109,8 @@ try:
         title = page.title()
         content = page.inner_text("body")[:8000]
         current_url = page.url
-        import base64
-        ss_bytes = page.screenshot(type="jpeg", quality=55, full_page=False)
-        ss_b64 = "data:image/jpeg;base64," + base64.b64encode(ss_bytes).decode()
         browser.close()
-        print(json.dumps({"success":True,"url":current_url,"title":title,"content":content,"screenshot_b64":ss_b64}))
+        print(json.dumps({"success":True,"url":current_url,"title":title,"content":content}))
 except Exception as e:
     print(json.dumps({"success":False,"error":str(e)}))
 ''', url=url)
@@ -129,7 +126,6 @@ except Exception as e:
                 "url": res.get("url", url),
                 "title": res.get("title", ""),
                 "content": res.get("content", ""),
-                "screenshot_b64": res.get("screenshot_b64"),
             },
         )
 
@@ -155,10 +151,8 @@ try:
         current_url = page.url
         title = page.title()
         content = page.inner_text("body")[:6000]
-        import base64
-        ss_b64 = "data:image/jpeg;base64," + base64.b64encode(page.screenshot(type="jpeg", quality=55)).decode()
         browser.close()
-        print(json.dumps({"success":True,"url":current_url,"title":title,"content":content,"screenshot_b64":ss_b64}))
+        print(json.dumps({"success":True,"url":current_url,"title":title,"content":content}))
 except Exception as e:
     print(json.dumps({"success":False,"error":str(e)}))
 ''', url=self.current_url, x=x, y=y, button=button)
@@ -167,7 +161,7 @@ except Exception as e:
         return ToolResult(
             success=res.get("success", False),
             message="Clicked at ({}, {}). Page: {}\n\n{}".format(x, y, res.get("title",""), res.get("content","")),
-            data={"x": x, "y": y, "button": button, "url": res.get("url",""), "screenshot_b64": res.get("screenshot_b64")},
+            data={"x": x, "y": y, "button": button, "url": res.get("url","")},
         )
 
     def type_text(self, text: str) -> ToolResult:
@@ -189,10 +183,8 @@ try:
         page.mouse.wheel(0, __delta_y__)
         page.wait_for_timeout(500)
         content = page.inner_text("body")[:6000]
-        import base64
-        ss_b64 = "data:image/jpeg;base64," + base64.b64encode(page.screenshot(type="jpeg", quality=55)).decode()
         browser.close()
-        print(json.dumps({"success":True,"content":content,"screenshot_b64":ss_b64}))
+        print(json.dumps({"success":True,"content":content}))
 except Exception as e:
     print(json.dumps({"success":False,"error":str(e)}))
 ''', url=self.current_url, delta_y=delta_y)
@@ -200,7 +192,7 @@ except Exception as e:
         return ToolResult(
             success=res.get("success", False),
             message="Scrolled {}.\n\n{}".format(direction, res.get("content", res.get("error", ""))),
-            data={"direction": direction, "amount": amount, "screenshot_b64": res.get("screenshot_b64")},
+            data={"direction": direction, "amount": amount, "url": self.current_url},
         )
 
     def console_view(self, max_lines: int = 100) -> ToolResult:
@@ -334,11 +326,10 @@ class PlaywrightSession:
             self.current_url = self._page.url
             title = self._page.title()
             content = self._page.inner_text("body")[:8000]
-            screenshot_b64 = self._capture_screenshot_b64()
             return ToolResult(
                 success=True,
                 message="Page: {}\nURL: {}\n\n{}".format(title, self.current_url, content),
-                data={"url": self.current_url, "title": title, "content": content, "screenshot_b64": screenshot_b64},
+                data={"url": self.current_url, "title": title, "content": content},
             )
         except Exception as e:
             return ToolResult(success=False, message="Navigate failed: {}".format(e))
@@ -349,11 +340,10 @@ class PlaywrightSession:
         try:
             content = self._page.inner_text("body")[:8000]
             title = self._page.title()
-            screenshot_b64 = self._capture_screenshot_b64()
             return ToolResult(
                 success=True,
                 message="Page: {}\nURL: {}\n\n{}".format(title, self.current_url, content),
-                data={"url": self.current_url, "title": title, "content": content, "screenshot_b64": screenshot_b64},
+                data={"url": self.current_url, "title": title, "content": content},
             )
         except Exception as e:
             return ToolResult(success=False, message="View failed: {}".format(e))
@@ -368,11 +358,10 @@ class PlaywrightSession:
             self.current_url = self._page.url
             title = self._page.title()
             content = self._page.inner_text("body")[:6000]
-            screenshot_b64 = self._capture_screenshot_b64()
             return ToolResult(
                 success=True,
                 message="Clicked ({}, {}). Page: {}\nURL: {}\n\n{}".format(x, y, title, self.current_url, content),
-                data={"x": x, "y": y, "button": button, "url": self.current_url, "title": title, "content": content, "screenshot_b64": screenshot_b64},
+                data={"x": x, "y": y, "button": button, "url": self.current_url, "title": title, "content": content},
             )
         except Exception as e:
             return ToolResult(success=False, message="Click failed: {}".format(e))
@@ -383,11 +372,10 @@ class PlaywrightSession:
         try:
             self._page.keyboard.type(text)
             self._page.wait_for_timeout(500)
-            screenshot_b64 = self._capture_screenshot_b64()
             return ToolResult(
                 success=True,
                 message="Typed: {}".format(repr(text)),
-                data={"text": text, "url": self.current_url, "screenshot_b64": screenshot_b64},
+                data={"text": text, "url": self.current_url},
             )
         except Exception as e:
             return ToolResult(success=False, message="Type failed: {}".format(e))
@@ -400,11 +388,10 @@ class PlaywrightSession:
             self._page.mouse.wheel(0, delta_y)
             self._page.wait_for_timeout(500)
             content = self._page.inner_text("body")[:4000]
-            screenshot_b64 = self._capture_screenshot_b64()
             return ToolResult(
                 success=True,
                 message="Scrolled {}.\n\n{}".format(direction, content),
-                data={"direction": direction, "amount": amount, "url": self.current_url, "screenshot_b64": screenshot_b64},
+                data={"direction": direction, "amount": amount, "url": self.current_url},
             )
         except Exception as e:
             return ToolResult(success=False, message="Scroll failed: {}".format(e))
@@ -771,7 +758,7 @@ def image_view(path: str) -> ToolResult:
         return ToolResult(
             success=True,
             message="Image loaded: {} ({} bytes)".format(path, len(data)),
-            data={"path": path, "size": len(data), "mime": mime, "screenshot_b64": b64},
+            data={"path": path, "size": len(data), "mime": mime},
         )
     except Exception as e:
         return ToolResult(success=False, message="Failed to view image: {}".format(e))

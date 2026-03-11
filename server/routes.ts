@@ -137,6 +137,7 @@ export async function registerRoutes(app: any): Promise<Server> {
     const { apiKey, agentModel } = getCFConfig();
     const sid = session_id || randomUUID();
 
+    vncTouch();
     const proc = spawn("python3", ["-u", "-m", "server.agent.agent_flow"], {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: process.cwd(),
@@ -148,6 +149,7 @@ export async function registerRoutes(app: any): Promise<Server> {
         PYTHONUNBUFFERED: "1",
         DISPLAY: process.env.DISPLAY || ":10",
         DZECK_VNC_DISPLAY: process.env.DZECK_VNC_DISPLAY || ":10",
+        DZECK_SESSION_ID: sid,
       },
     });
 
@@ -235,10 +237,8 @@ export async function registerRoutes(app: any): Promise<Server> {
       return res.status(400).json({ error: "invalid path encoding" });
     }
 
-    // Security: only allow files in /tmp/, /home/, or project workspace
-    const allowed = ["/tmp/", "/home/", process.cwd()];
-    const isAllowed = allowed.some(prefix => filePath.startsWith(prefix));
-    if (!isAllowed) {
+    // Security: only allow files in /tmp/dzeck_files/ (session-scoped file storage)
+    if (filePath.includes("..")) {
       return res.status(403).json({ error: "access denied: path not allowed" });
     }
 
@@ -246,9 +246,14 @@ export async function registerRoutes(app: any): Promise<Server> {
       return res.status(404).json({ error: `File not found: ${filePath}` });
     }
 
-    const stat = fs.statSync(filePath);
-    if (!stat.isFile()) {
-      return res.status(400).json({ error: "path is not a file" });
+    const realFilePath = fs.realpathSync(filePath);
+    if (!realFilePath.startsWith("/tmp/dzeck_files/")) {
+      return res.status(403).json({ error: "access denied: path not allowed" });
+    }
+
+    const stat = fs.lstatSync(realFilePath);
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      return res.status(400).json({ error: "path is not a regular file" });
     }
 
     const fileName = rawName ? decodeURIComponent(rawName) : path.basename(filePath);
@@ -391,6 +396,30 @@ export async function registerRoutes(app: any): Promise<Server> {
   let _vncStarting = false;
   const VNC_DISPLAY = ":10";
   const VNC_PORT_NUM = 5910;
+  const VNC_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+  let _vncLastActivity = Date.now();
+  let _vncIdleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function vncTouch() {
+    _vncLastActivity = Date.now();
+    if (_vncIdleTimer) { clearTimeout(_vncIdleTimer); _vncIdleTimer = null; }
+    _vncIdleTimer = setTimeout(() => {
+      if (Date.now() - _vncLastActivity >= VNC_IDLE_TIMEOUT_MS - 1000) {
+        console.log("[VNC] Idle timeout (10min) — shutting down VNC display");
+        stopVnc();
+      }
+    }, VNC_IDLE_TIMEOUT_MS);
+  }
+
+  function stopVnc() {
+    for (const p of _vncProcs) {
+      try { p.kill("SIGTERM"); } catch {}
+    }
+    _vncProcs.length = 0;
+    _vncStarted = false;
+    if (_vncIdleTimer) { clearTimeout(_vncIdleTimer); _vncIdleTimer = null; }
+    console.log("[VNC] Display stopped");
+  }
 
   // Set DISPLAY early so agent/browser requests never start headless
   process.env.DISPLAY = VNC_DISPLAY;
@@ -469,7 +498,7 @@ export async function registerRoutes(app: any): Promise<Server> {
       const x11vncProc = spawnProc(x11vnc, [
         "-display", VNC_DISPLAY, "-forever", "-shared", "-nopw",
         "-rfbport", String(VNC_PORT_NUM),
-        "-noxdamage", "-noxfixes", "-nocursorshape", "-nocursor", "-quiet",
+        "-noxdamage", "-cursor", "arrow", "-quiet",
       ], {
         detached: false, stdio: "ignore",
         env: { ...process.env, DISPLAY: VNC_DISPLAY },
@@ -532,7 +561,8 @@ export async function registerRoutes(app: any): Promise<Server> {
 
       _vncStarted = true;
       _vncStarting = false;
-      console.log(`[VNC] Stack ready: DISPLAY=${VNC_DISPLAY} VNC_PORT=${VNC_PORT_NUM} (WS proxied natively)`);
+      vncTouch();
+      console.log(`[VNC] Stack ready: DISPLAY=${VNC_DISPLAY} VNC_PORT=${VNC_PORT_NUM} (idle timeout: 10min)`);
       return true;
     } catch (err: any) {
       console.error("[VNC] Failed to start:", err.message);
@@ -561,19 +591,21 @@ export async function registerRoutes(app: any): Promise<Server> {
   // ─── VNC status endpoint ──────────────────────────────────────────────────
   app.get("/api/vnc/status", (_req: any, res: any) => {
     const wsPort = 6081;
-    const vncPort = VNC_PORT_NUM; // x11vnc runs on 5910, not 5900
+    const vncPort = VNC_PORT_NUM;
+    const idleMs = Date.now() - _vncLastActivity;
+    const remainMs = Math.max(0, VNC_IDLE_TIMEOUT_MS - idleMs);
     const tcpCheck = net.createConnection({ port: vncPort, host: "127.0.0.1" });
     tcpCheck.setTimeout(800);
     tcpCheck.on("connect", () => {
       tcpCheck.destroy();
-      res.json({ ready: true, ws_port: wsPort, vnc_port: vncPort });
+      res.json({ ready: true, ws_port: wsPort, vnc_port: vncPort, idle_ms: idleMs, remaining_ms: remainMs });
     });
     tcpCheck.on("error", () => {
-      res.json({ ready: false, ws_port: wsPort, vnc_port: vncPort });
+      res.json({ ready: false, ws_port: wsPort, vnc_port: vncPort, idle_ms: idleMs, remaining_ms: remainMs });
     });
     tcpCheck.on("timeout", () => {
       tcpCheck.destroy();
-      res.json({ ready: false, ws_port: wsPort, vnc_port: vncPort });
+      res.json({ ready: false, ws_port: wsPort, vnc_port: vncPort, idle_ms: idleMs, remaining_ms: remainMs });
     });
   });
 
@@ -598,6 +630,7 @@ export async function registerRoutes(app: any): Promise<Server> {
   const wss = new WebSocketServer({ noServer: true });
 
   wss.on("connection", (clientWs: any, _req: any) => {
+    vncTouch();
     console.log(`[VNC-WS] Client connected → proxying to VNC TCP:${VNC_PORT_NUM}`);
 
     const vncSocket = net.createConnection({ port: VNC_PORT_NUM, host: "127.0.0.1" });

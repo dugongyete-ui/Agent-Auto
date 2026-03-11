@@ -269,7 +269,7 @@
       max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .tool-chip-spin{width:11px;height:11px;border:1.5px solid var(--muted);
       border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
-    .tool-screenshot{margin:5px 0 2px 22px;border-radius:9px;overflow:hidden;border:1px solid var(--border);
+    .tool-screenshot{display:none !important;margin:5px 0 2px 22px;border-radius:9px;overflow:hidden;border:1px solid var(--border);
       max-width:400px;cursor:pointer;display:block;box-shadow:var(--shadow)}
     .tool-screenshot img{width:100%;display:block;max-height:200px;object-fit:cover}
     .tool-download{margin:5px 0 2px 22px}
@@ -1184,6 +1184,32 @@ function addToolChip(stepId, tcId, evt) {
       }
     }
   }
+  if (type==='search') {
+    const query = evt.function_args?.query || arg || '';
+    if (query) {
+      const panelPre = document.getElementById('tp-term-output');
+      if (panelPre) {
+        const cmdSpan = document.createElement('span');
+        cmdSpan.className = 'cmd';
+        cmdSpan.textContent = '🔍 Mencari: ' + query + '\n';
+        panelPre.appendChild(cmdSpan);
+        panelPre.scrollTop = panelPre.scrollHeight;
+      }
+    }
+  }
+  if (type==='file') {
+    const fname = evt.function_args?.file || arg || '';
+    if (fname) {
+      const panelPre = document.getElementById('tp-term-output');
+      if (panelPre) {
+        const cmdSpan = document.createElement('span');
+        cmdSpan.className = 'cmd';
+        cmdSpan.textContent = '📄 ' + fn + ': ' + fname + '\n';
+        panelPre.appendChild(cmdSpan);
+        panelPre.scrollTop = panelPre.scrollHeight;
+      }
+    }
+  }
 }
 
 function updateToolChip(tcId, evt) {
@@ -1201,28 +1227,6 @@ function updateToolChip(tcId, evt) {
   }
   const tc = evt.tool_content;
   if (tc?.type==='browser') {
-    if (tc.screenshot_b64) {
-      const src = tc.screenshot_b64.startsWith('data:')?tc.screenshot_b64:`data:image/jpeg;base64,${tc.screenshot_b64}`;
-      S.latestScreenshot = src;
-      if (!S.rfb) updatePanelScreenshot(src, tc.url||'');
-      // Thumbnail in chat
-      const parent = chip.parentElement;
-      if (parent) {
-        let thumb = document.getElementById(`th-${tcId}`);
-        if (!thumb) {
-          thumb = document.createElement('div');
-          thumb.id = `th-${tcId}`;
-          thumb.className = 'tool-screenshot';
-          const img = document.createElement('img');
-          img.src = src; img.alt = 'screenshot'; img.onclick = () => openScreenshot(src);
-          thumb.appendChild(img);
-          parent.appendChild(thumb);
-        } else {
-          const img = thumb.querySelector('img');
-          if (img) img.src = src;
-        }
-      }
-    }
     if (tc.url) {
       const argEl = document.getElementById(`ta-${tcId}`);
       if (argEl) argEl.textContent = tc.url.substring(0,55);
@@ -1242,6 +1246,42 @@ function updateToolChip(tcId, evt) {
         panelPre.appendChild(outSpan);
         panelPre.scrollTop = panelPre.scrollHeight;
       }
+    }
+  }
+  if (tc?.type==='search') {
+    const panelPre = document.getElementById('tp-term-output');
+    if (panelPre) {
+      const results = tc.results || [];
+      if (results.length > 0) {
+        results.forEach((r, i) => {
+          const resultSpan = document.createElement('span');
+          resultSpan.className = 'out';
+          resultSpan.textContent = `${i+1}. ${r.title || 'Untitled'}\n   ${r.url || ''}\n   ${(r.snippet || '').substring(0, 150)}\n\n`;
+          panelPre.appendChild(resultSpan);
+        });
+      } else {
+        const noSpan = document.createElement('span');
+        noSpan.className = 'err';
+        noSpan.textContent = 'Tidak ada hasil ditemukan.\n';
+        panelPre.appendChild(noSpan);
+      }
+      panelPre.scrollTop = panelPre.scrollHeight;
+    }
+  }
+
+  if (tc?.type==='file') {
+    const panelPre = document.getElementById('tp-term-output');
+    if (panelPre) {
+      const op = tc.operation || 'file';
+      const fname = tc.filename || tc.file || '';
+      const outSpan = document.createElement('span');
+      outSpan.className = ok ? 'out' : 'err';
+      const msg = ok
+        ? `✓ ${op}: ${fname}${tc.download_url ? ' [downloadable]' : ''}`
+        : `✗ ${op}: ${fname} (error)`;
+      outSpan.textContent = msg + '\n';
+      panelPre.appendChild(outSpan);
+      panelPre.scrollTop = panelPre.scrollHeight;
     }
   }
 
@@ -1273,15 +1313,12 @@ function showToolPanel(skipVnc) {
   if (skipVnc) return;
   const termActive = document.getElementById('tp-terminal-area')?.classList.contains('active');
   if (termActive) return;
-  if (S.latestScreenshot && !S.rfb) {
-    tpSS.src = S.latestScreenshot;
-    tpSS.style.display = 'block';
+  tpSS.style.display = 'none';
+  if (S.rfb) {
+    vncCont.style.display = 'block';
     tpEmpty.style.display = 'none';
-  } else if (!S.rfb) {
-    tpSS.style.display = 'none';
+  } else {
     tpEmpty.style.display = 'flex';
-  }
-  if (!S.rfb) {
     setTimeout(() => connectVNC(), 300);
   }
 }
@@ -1289,9 +1326,6 @@ function showToolPanel(skipVnc) {
 function hideToolPanel() {
   toolPanel.classList.remove('open');
   document.getElementById('computer-btn').classList.remove('on');
-  disconnectVNC();
-  _vncRetries = 0;
-  clearTimeout(_vncRetryTimer);
 }
 
 function toggleComputerPanel() {
@@ -1309,26 +1343,18 @@ function updatePanelTool(type, label, arg, icon) {
   document.getElementById('tp-tool-arg').textContent = arg;
   const termArea = document.getElementById('tp-terminal-area');
   const browserArea = document.getElementById('tp-browser-area');
-  if (type==='shell'||type==='code'||type==='file') {
-    termArea.classList.add('active');
-    browserArea.style.display = 'none';
-    tpUrlbar.style.display = 'none';
-  } else if (type==='browser') {
+  if (type==='browser') {
     termArea.classList.remove('active');
     browserArea.style.display = '';
     tpUrlbar.style.display = 'flex';
   } else {
-    browserArea.style.display = '';
+    termArea.classList.add('active');
+    browserArea.style.display = 'none';
+    tpUrlbar.style.display = 'none';
   }
 }
 
 function updatePanelScreenshot(src, url) {
-  S.latestScreenshot = src;
-  if (S.rfb) return;
-  tpSS.src = src; tpSS.style.display = 'block';
-  tpEmpty.style.display = 'none';
-  if (url) { tpUrlText.textContent = url; tpUrlbar.style.display = 'flex'; }
-  tpStatus.textContent = 'Screenshot diperbarui';
 }
 
 // ═══════════════════════════════════════════════════
@@ -1433,7 +1459,7 @@ async function connectVNC() {
     S.rfb.scaleViewport = true;
     S.rfb.resizeSession = false;
     S.rfb.viewOnly = !S.isTakeover;
-    S.rfb.showDotCursor = false;
+    S.rfb.showDotCursor = true;
 
     vncCont.style.display = 'none';
     let connected = false;
@@ -1453,21 +1479,21 @@ async function connectVNC() {
       tpLive.classList.remove('on');
       S.rfb = null;
       if (connected) {
-        tpStatus.textContent = 'Koneksi terputus — menghubungkan ulang...';
-        _vncRetryTimer = setTimeout(() => connectVNC(), 3000);
+        tpStatus.textContent = 'Komputer idle — akan aktif lagi saat dibutuhkan';
+        _vncRetryTimer = setTimeout(() => connectVNC(), 5000);
       } else {
         _vncRetries++;
         if (_vncRetries <= VNC_MAX_RETRIES && toolPanel.classList.contains('open')) {
           tpStatus.textContent = `Menghubungkan ulang... (${_vncRetries}/${VNC_MAX_RETRIES})`;
           _vncRetryTimer = setTimeout(() => connectVNC(), VNC_RETRY_MS);
         } else {
-          tpStatus.textContent = 'Komputer virtual tidak tersedia';
+          tpStatus.textContent = 'Komputer idle — akan aktif otomatis saat Dzeck bekerja';
           _vncRetries = 0;
         }
         console.warn('[VNC] Disconnect before connect — retry', _vncRetries, e.detail);
       }
-      if (S.latestScreenshot) { tpSS.src = S.latestScreenshot; tpSS.style.display = 'block'; tpEmpty.style.display = 'none'; }
-      else { tpEmpty.style.display = 'flex'; tpSS.style.display = 'none'; }
+      tpSS.style.display = 'none';
+      tpEmpty.style.display = 'flex';
     });
 
     S.rfb.addEventListener('credentialsrequired', () => {
@@ -1503,9 +1529,13 @@ function toggleTakeover() {
 
   if (S.rfb) {
     S.rfb.viewOnly = !S.isTakeover;
+    S.rfb.showDotCursor = true;
     if (S.isTakeover) {
       vncCont.focus();
       S.rfb.focus();
+      vncCont.style.cursor = 'default';
+    } else {
+      vncCont.style.cursor = 'default';
     }
   }
   btn.className = S.isTakeover ? 'active' : '';

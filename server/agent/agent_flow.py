@@ -490,7 +490,6 @@ def build_tool_content(tool_name: str, tool_result: ToolResult) -> Optional[Dict
             "title": data.get("title", ""),
             "content": str(data.get("content", data.get("content_snippet", "")))[:2000],
             "save_path": data.get("save_path", ""),
-            "screenshot_b64": data.get("screenshot_b64", ""),
         }
     elif tool_name in ("file_read", "file_write", "file_str_replace",
                        "file_find_by_name", "file_find_in_content",
@@ -917,13 +916,13 @@ class DzeckAgent:
                 from server.agent.tools.e2b_sandbox import get_sandbox
                 sb = get_sandbox()
                 cmd = _args.get("command", "")
-                workdir = _args.get("exec_dir", "/home/user")
+                workdir = _args.get("exec_dir", "/home/user/project")
                 timeout_s = _args.get("timeout", 90)
                 if not sb:
                     return execute_tool(_res, _args)
                 try:
-                    if workdir != "/home/user":
-                        sb.commands.run(f"mkdir -p {workdir}", timeout=10)
+                    import shlex
+                    sb.commands.run(f"mkdir -p {shlex.quote(workdir)}", timeout=10)
                     result = sb.commands.run(
                         cmd, cwd=workdir, timeout=timeout_s,
                         on_stdout=lambda data: e2b_q.put(("stdout", data if isinstance(data, str) else getattr(data, 'line', str(data)))),
@@ -979,13 +978,14 @@ class DzeckAgent:
         result_status = ToolStatus.CALLED if tool_result.success else ToolStatus.ERROR
         fn_result = str(tool_result.message)[:3000] if tool_result.message else ""
 
-        # ── Track files created by file_write / shell_exec ──
+        # ── Track DELIVERABLE files created by file_write / file_str_replace ──
         if tool_result.success and resolved in ("file_write", "file_str_replace"):
             data = tool_result.data or {}
             durl = data.get("download_url", "")
+            is_deliverable = data.get("is_deliverable", False)
             fpath = data.get("file", data.get("path", fn_args.get("file", fn_args.get("path", ""))))
             fname = os.path.basename(fpath) if fpath else ""
-            if durl and fname:
+            if durl and fname and is_deliverable:
                 already = any(f["download_url"] == durl for f in self._created_files)
                 if not already:
                     self._created_files.append({
@@ -994,6 +994,33 @@ class DzeckAgent:
                         "download_url": durl,
                         "mime": data.get("mime", ""),
                     })
+
+        # ── Sync E2B OUTPUT files back after shell commands ──
+        if tool_result.success and resolved == "shell_exec" and bool(os.environ.get("E2B_API_KEY", "")):
+            try:
+                from server.agent.tools.e2b_sandbox import list_output_files, sync_file_from_sandbox
+                from server.agent.tools.file import _make_download_url
+                e2b_files = list_output_files()
+                _sess_dir = os.environ.get("DZECK_SESSION_ID", "")
+                _files_base = f"/tmp/dzeck_files/{_sess_dir}" if _sess_dir else "/tmp/dzeck_files"
+                os.makedirs(_files_base, exist_ok=True)
+                synced_fnames = {f.get("filename", "") for f in self._created_files}
+                for ef in e2b_files:
+                    fname = os.path.basename(ef)
+                    local_target = os.path.join(_files_base, fname)
+                    if fname and fname not in synced_fnames:
+                        local = sync_file_from_sandbox(ef, local_target)
+                        if local:
+                            durl = _make_download_url(local)
+                            self._created_files.append({
+                                "filename": fname,
+                                "path": local,
+                                "download_url": durl,
+                                "mime": "",
+                            })
+                            synced_fnames.add(fname)
+            except Exception:
+                pass
 
         # ── 3. Emit result event ──
         yield make_event(
@@ -1051,7 +1078,7 @@ Available tools:
 - info_search_web: Search the web. Args: {"query": "search query"}
 - web_browse: Open/browse a URL. Args: {"url": "https://..."}
 - browser_navigate: Navigate browser to URL. Args: {"url": "https://..."}
-- browser_view: Take screenshot of current page. Args: {}
+- browser_view: View current page content (visible on VNC). Args: {}
 - shell_exec: Run shell command. Args: {"id": "sess1", "exec_dir": "/tmp", "command": "ls -la"}
 - file_read: Read a file. Args: {"path": "/path/to/file"}
 - file_write: Write a file. Args: {"path": "/path/to/file", "content": "..."}
@@ -1073,7 +1100,13 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
 
         for iteration in range(self.max_tool_iterations):
             try:
-                # If tools support status changed, rebuild system message
+                if iteration % 3 == 0 and bool(os.environ.get("E2B_API_KEY", "")):
+                    try:
+                        from server.agent.tools.e2b_sandbox import keepalive as _e2b_keepalive
+                        _e2b_keepalive()
+                    except Exception:
+                        pass
+
                 if _TOOLS_SUPPORTED != _prev_tools_supported:
                     _prev_tools_supported = _TOOLS_SUPPORTED
                     exec_messages[0] = {"role": "system", "content": _build_system_content()}
