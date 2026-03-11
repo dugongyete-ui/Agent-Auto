@@ -22,13 +22,21 @@ Step writing guidelines:
 - Include the expected outcome in the description when helpful
 - For research tasks: include steps to access multiple sources
 - For coding tasks: include steps to test and verify the code works
-- For web tasks: use browser_navigate/browser_view in step descriptions (NEVER shell/curl)
+- For web tasks: use browser_navigate/browser_view in step descriptions (NEVER shell/curl/shell_wait)
+- NEVER create a step like "tunggu halaman terbuka" or "wait for page" — this causes wrong tool usage.
+  Instead use: "Navigasi ke [URL] menggunakan browser dan tampilkan isi halaman" (1 combined step)
 
 Tool routing hints to embed in step descriptions:
 - Web access / URL / website → "Buka [URL] menggunakan browser" → executor akan pakai browser_navigate
+- View page after navigation → embed "dan tampilkan hasilnya" → executor pakai browser_view setelah navigate
 - Search → "Cari informasi tentang X" → executor akan pakai info_search_web
 - Code / script execution → "Jalankan kode Python ..." → executor akan pakai shell_exec
 - File operations → "Buat/baca file ..." → executor akan pakai file_write/file_read
+- JANGAN buat langkah terpisah "tunggu" untuk browser — gabungkan navigasi + verifikasi dalam 1 langkah
+
+CRITICAL - JANGAN gunakan kata berikut dalam deskripsi langkah browser (akan memicu shell_wait):
+- "tunggu", "wait", "menunggu", "beri waktu", "pause", "delay"
+Ganti dengan: "Navigasi dan lihat isi halaman [URL] menggunakan browser"
 
 FILE DELIVERY (CRITICAL):
 - Saat user meminta file (.md, .txt, .pdf, .docx, .xlsx, .zip, .csv, .json, .html, .js, .py, .sql, .png, .jpg, .svg),

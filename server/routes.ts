@@ -663,7 +663,6 @@ export async function registerRoutes(app: any): Promise<Server> {
             "--autoplay-policy=no-user-gesture-required",
             "--password-store=basic", "--use-mock-keychain",
             "--window-size=1280,720", "--window-position=0,0",
-            "--start-maximized", "--kiosk",
             `--remote-debugging-port=${CDP_PORT}`,
             "--remote-debugging-address=127.0.0.1",
             `--user-data-dir=/tmp/dzeck-chrome-data-${Date.now()}`,

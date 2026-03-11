@@ -32,9 +32,11 @@ ATURAN PEMILIHAN TOOL (WAJIB DIPATUHI — jangan langgar ini):
    - BENAR: info_search_web(query="...")
    - SALAH: shell_exec("curl google.com")
 
-3. MELIHAT ISI HALAMAN WEB SETELAH NAVIGASI → browser_view
+3. MELIHAT ISI HALAMAN WEB / VERIFIKASI BROWSER → browser_view
    - Setelah browser_navigate, gunakan browser_view untuk melihat konten terbaru
+   - Langkah "lihat halaman", "tampilkan isi", "verifikasi browser terbuka" → WAJIB browser_view
    - JANGAN panggil shell_exec untuk wget/curl sebuah halaman
+   - JANGAN PERNAH gunakan shell_wait untuk menunggu browser — selalu browser_view
 
 4. MENJALANKAN KODE PYTHON / SCRIPT / TERMINAL → shell_exec
    - Contoh: "jalankan script Python", "install package", "buat dan jalankan kode"
@@ -54,14 +56,20 @@ ATURAN PEMILIHAN TOOL (WAJIB DIPATUHI — jangan langgar ini):
 7. MENGAMBIL SCREENSHOT → browser_navigate + browser_view atau browser_save_image
    - JANGAN gunakan shell untuk screenshot
 
+8. MENUNGGU / VERIFIKASI BROWSER SIAP → browser_view (BUKAN shell_wait!)
+   - "Tunggu halaman terbuka", "pastikan halaman terbuka", "verifikasi browser" → browser_view
+   - shell_wait HANYA untuk: menunggu proses shell yang sedang berjalan di background (bukan browser)
+   - JANGAN PERNAH gunakan shell_wait untuk operasi browser apapun
+
 LARANGAN ABSOLUT:
 - JANGAN PERNAH gunakan shell_exec untuk: curl URL, wget URL, python requests ke URL web,
   google-chrome, chromium, firefox, xdg-open, atau membuka browser via shell
+- JANGAN PERNAH gunakan shell_wait untuk menunggu browser atau halaman web
 - JANGAN PERNAH jalankan program GUI via shell_exec: xterm, gnome-terminal, konsole, xfce4-terminal,
   startx, Xvfb, vlc, mpv, gimp, inkscape, evince, gedit, nautilus, atau program desktop apapun.
   Sandbox adalah HEADLESS (tanpa display/layar). Semua program GUI akan GAGAL.
-- Shell_exec HANYA untuk: kode Python/script, terminal commands, install package, operasi file system
-- Untuk browsing web: SELALU gunakan browser_navigate, BUKAN shell
+- Shell_exec / shell_wait HANYA untuk: kode Python/script, terminal commands, install package, operasi file system
+- Untuk browsing web: SELALU gunakan browser_navigate lalu browser_view, BUKAN shell
 </tool_selection_guide>
 
 <browser_state>
