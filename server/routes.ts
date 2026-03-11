@@ -404,24 +404,36 @@ export async function registerRoutes(app: any): Promise<Server> {
 
     try {
       const { spawn: spawnProc, execSync } = require("node:child_process");
-      const findBin = (name: string): string => {
-        try { return execSync(`which ${name}`, { encoding: "utf-8" }).trim(); } catch {}
+
+      // Fast binary lookup: only use `which` (respects PATH) with known fallbacks
+      const findBin = (name: string, fallback: string | null = null): string => {
         try {
-          const paths = [
-            ...require("node:child_process").execSync(`find /nix/store -name ${name} -type f 2>/dev/null`, { encoding: "utf-8" }).split("\n").filter(Boolean),
-          ];
-          const binPaths = paths.filter((p: string) => p.includes("/bin/"));
-          return binPaths[0] || paths[0] || name;
-        } catch { return name; }
+          const p = execSync(`which ${name} 2>/dev/null`, { encoding: "utf-8", timeout: 2000 }).trim();
+          if (p) return p;
+        } catch {}
+        return fallback !== null ? fallback : name;
       };
 
-      const xvfb = findBin("Xvfb");
-      const x11vnc = findBin("x11vnc");
+      // Use known nix store paths as fallbacks (from environment introspection)
+      const xvfb = findBin("Xvfb", "/nix/store/8jlz3l9kf9w7zq263vy3ms5c90hy96r4-xorg-server-21.1.13/bin/Xvfb");
+      const x11vnc = findBin("x11vnc", "/nix/store/x15ycm43gka3mkj8lxy14mv8iazxk60s-x11vnc-0.9.16/bin/x11vnc");
+      const xsetroot = findBin("xsetroot", "");
+
+      console.log(`[VNC] Binaries: Xvfb=${xvfb} x11vnc=${x11vnc}`);
 
       // Kill any stale processes on the display/port before starting
-      try { execSync(`pkill -f "Xvfb ${VNC_DISPLAY}" 2>/dev/null || true`, { encoding: "utf-8" }); } catch {}
-      try { execSync(`pkill -f "x11vnc.*${VNC_PORT_NUM}" 2>/dev/null || true`, { encoding: "utf-8" }); } catch {}
-      await new Promise(r => setTimeout(r, 500));
+      try { execSync(`pkill -f "Xvfb ${VNC_DISPLAY}" 2>/dev/null; true`); } catch {}
+      try { execSync(`pkill -f "x11vnc.*${VNC_PORT_NUM}" 2>/dev/null; true`); } catch {}
+      await new Promise(r => setTimeout(r, 800));
+
+      // Remove stale X lock files so Xvfb can start fresh
+      const displayNum = VNC_DISPLAY.replace(":", "");
+      try {
+        const lockFile = `/tmp/.X${displayNum}-lock`;
+        const socketFile = `/tmp/.X11-unix/X${displayNum}`;
+        if (fs.existsSync(lockFile)) { fs.unlinkSync(lockFile); console.log(`[VNC] Removed stale lock: ${lockFile}`); }
+        if (fs.existsSync(socketFile)) { fs.unlinkSync(socketFile); console.log(`[VNC] Removed stale socket: ${socketFile}`); }
+      } catch (e: any) { console.warn("[VNC] Lock cleanup warning:", e.message); }
 
       // 1. Start Xvfb
       const xvfbProc = spawnProc(xvfb, [VNC_DISPLAY, "-screen", "0", "1280x720x24", "-ac", "-nolisten", "tcp"], {
@@ -437,13 +449,14 @@ export async function registerRoutes(app: any): Promise<Server> {
       }
 
       // 2. Draw solid background so display isn't black
-      try {
-        const xsetroot = findBin("xsetroot");
-        spawnProc(xsetroot, ["-solid", "#0e0e14"], {
-          detached: false, stdio: "ignore",
-          env: { ...process.env, DISPLAY: VNC_DISPLAY },
-        });
-      } catch {}
+      if (xsetroot) {
+        try {
+          spawnProc(xsetroot, ["-solid", "#0e0e14"], {
+            detached: false, stdio: "ignore",
+            env: { ...process.env, DISPLAY: VNC_DISPLAY },
+          });
+        } catch {}
+      }
 
       // 3. Start x11vnc on VNC_PORT_NUM (avoids conflict with any system :5900)
       const x11vncProc = spawnProc(x11vnc, [
@@ -468,9 +481,9 @@ export async function registerRoutes(app: any): Promise<Server> {
 
       // 5. Launch Chromium on the virtual display so it's not blank
       try {
-        const chromium = findBin("chromium") || findBin("chromium-browser") || findBin("google-chrome");
-        if (chromium) {
-          spawnProc(chromium, [
+        const chromiumPath = findBin("chromium", "") || findBin("chromium-browser", "") || findBin("google-chrome", "");
+        if (chromiumPath) {
+          spawnProc(chromiumPath, [
             "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
             "--window-size=1280,720", "--start-maximized",
             "about:blank",

@@ -19,6 +19,15 @@ Implements Manus-like autonomous agent architecture with class-based tools, Plan
 | Default Language | Bahasa Indonesia (semua prompt) |
 | Tools | Class-based dengan @tool decorator (BaseTool pattern) |
 
+## VNC Architecture
+
+- **Xvfb** virtual display on `:10`, screen `1280x720x24`
+- **x11vnc** VNC server on port `5910` (NOT 5900 — avoids system conflicts)
+- **Native WS→TCP proxy** in Node.js `routes.ts`: browser connects to `/vnc-ws` WebSocket → proxied directly to TCP port 5910 (no websockify needed)
+- **Stale lock cleanup** on each server restart: removes `/tmp/.X10-lock` and `/tmp/.X11-unix/X10` before starting Xvfb
+- **noVNC** client loaded from CDN in `server/templates/vnc-view.html`
+- DISPLAY env var set to `:10` for all spawned subprocesses (Playwright)
+
 ## Key Features
 
 - **Manus-like Web UI**: Full redesign di `server/templates/web-chat.html` dengan Manus-style interface

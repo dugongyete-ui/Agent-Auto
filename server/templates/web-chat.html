@@ -1608,6 +1608,19 @@ function finalize() {
   else if (S.aiBodyEl) { S.aiBodyEl.closest('.msg-ai')?.remove(); }
   S.aiBodyEl=null; S.aiContent='';
   S.currentStepId=null;
+
+  // Force all plan steps to completed so plan bar never stays in loading state
+  if (S.plan && S.plan.steps) {
+    S.plan.steps.forEach(st => {
+      if (st.status !== 'completed' && st.status !== 'failed') {
+        st.status = 'completed';
+        updateStepStatus(st.id, 'completed');
+        updatePlanMini(st.id, 'completed');
+      }
+    });
+    updatePlanBarCount();
+  }
+
   setStreaming(false);
   scrollBottom(true);
   tpStatus.textContent='Selesai';
