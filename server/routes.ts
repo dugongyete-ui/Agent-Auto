@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { spawn } from "node:child_process";
 import * as https from "node:https";
+import * as net from "node:net";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -311,38 +312,49 @@ export async function registerRoutes(app: any): Promise<Server> {
   });
 
   // ─── File Upload endpoint ────────────────────────────────────────────────────
-  app.post("/api/upload", upload.array("files", 10), (req: any, res: any) => {
-    try {
-      const files = (req.files as any[]) || [];
-      if (files.length === 0) {
-        return res.status(400).json({ error: "No files uploaded" });
+  app.post("/api/upload", (req: any, res: any, next: any) => {
+    upload.array("files", 10)(req, res, (multerErr: any) => {
+      if (multerErr) {
+        const msg = multerErr.code === "LIMIT_FILE_SIZE"
+          ? "File terlalu besar (max 50MB)"
+          : multerErr.message || "Upload gagal";
+        return res.status(400).json({ error: msg });
       }
-      const result = files.map((f: any) => {
-        const filePath = f.path;
-        const fileName = f.originalname;
-        const mime = f.mimetype || "application/octet-stream";
-        const size = f.size;
-        const isImage = mime.startsWith("image/");
-        const isText = mime.startsWith("text/") || /\.(txt|md|py|js|ts|json|csv|xml|html|css|sh|yaml|yml|toml|ini|log)$/i.test(fileName);
-        let preview: string | null = null;
-        if (isText && size < 500 * 1024) {
-          try { preview = fs.readFileSync(filePath, "utf-8"); } catch {}
+      try {
+        const files = (req.files as any[]) || [];
+        if (files.length === 0) {
+          return res.status(400).json({ error: "Tidak ada file yang diunggah" });
         }
-        return {
-          filename: fileName,
-          path: filePath,
-          mime,
-          size,
-          is_image: isImage,
-          is_text: isText,
-          preview,
-          download_url: `/api/files/download?path=${encodeURIComponent(filePath)}&name=${encodeURIComponent(fileName)}`,
-        };
-      });
-      res.json({ files: result });
-    } catch (err: any) {
-      res.status(500).json({ error: "Upload failed: " + err.message });
-    }
+        if (!fs.existsSync(DZECK_UPLOADS_DIR)) {
+          fs.mkdirSync(DZECK_UPLOADS_DIR, { recursive: true });
+        }
+        const result = files.map((f: any) => {
+          const filePath = f.path;
+          const fileName = f.originalname;
+          const mime = f.mimetype || "application/octet-stream";
+          const size = f.size;
+          const isImage = mime.startsWith("image/");
+          const isText = mime.startsWith("text/") || /\.(txt|md|py|js|ts|json|csv|xml|html|css|sh|yaml|yml|toml|ini|log)$/i.test(fileName);
+          let preview: string | null = null;
+          if (isText && size < 500 * 1024) {
+            try { preview = fs.readFileSync(filePath, "utf-8"); } catch {}
+          }
+          return {
+            filename: fileName,
+            path: filePath,
+            mime,
+            size,
+            is_image: isImage,
+            is_text: isText,
+            preview,
+            download_url: `/api/files/download?path=${encodeURIComponent(filePath)}&name=${encodeURIComponent(fileName)}`,
+          };
+        });
+        res.json({ files: result });
+      } catch (err: any) {
+        res.status(500).json({ error: "Upload gagal: " + err.message });
+      }
+    });
   });
 
   // ─── File list endpoint (files created by AI) ───────────────────────────────
@@ -367,10 +379,172 @@ export async function registerRoutes(app: any): Promise<Server> {
     }
   });
 
+  // ─── VNC start/manage (managed by Node.js server) ───────────────────────
+  const _vncProcs: any[] = [];
+  let _vncStarted = false;
+  let _vncStarting = false;
+
+  async function ensureVncRunning(): Promise<boolean> {
+    if (_vncStarted) {
+      const allAlive = _vncProcs.every((p: any) => p.exitCode === null);
+      if (allAlive) return true;
+      _vncStarted = false;
+      _vncProcs.length = 0;
+    }
+    if (_vncStarting) {
+      return new Promise(resolve => setTimeout(() => resolve(_vncStarted), 5000));
+    }
+    _vncStarting = true;
+
+    try {
+      const { spawn: spawnProc } = require("node:child_process");
+      const findBin = (name: string): string => {
+        const { execSync } = require("node:child_process");
+        try { return execSync(`which ${name}`, { encoding: "utf-8" }).trim(); } catch {}
+        try {
+          const result = execSync(`find /nix/store -name ${name} -type f 2>/dev/null | head -1`, { encoding: "utf-8" }).trim();
+          return result || name;
+        } catch { return name; }
+      };
+
+      const xvfb = findBin("Xvfb");
+      const x11vnc = findBin("x11vnc");
+      const DISPLAY = ":10";
+      const VNC_PORT = "5910";
+      const WS_PORT = "6081";
+
+      // 1. Start Xvfb
+      const xvfbProc = spawnProc(xvfb, [DISPLAY, "-screen", "0", "1280x720x24", "-ac"], {
+        detached: false, stdio: "ignore",
+        env: { ...process.env },
+      });
+      _vncProcs.push(xvfbProc);
+      await new Promise(r => setTimeout(r, 1500));
+
+      if (xvfbProc.exitCode !== null) {
+        console.error("[VNC] Xvfb failed to start");
+        _vncStarting = false; return false;
+      }
+
+      // 2. Start x11vnc
+      const x11vncProc = spawnProc(x11vnc, [
+        "-display", DISPLAY, "-forever", "-shared", "-nopw",
+        "-rfbport", VNC_PORT, "-noxdamage", "-noxfixes", "-quiet",
+      ], {
+        detached: false, stdio: "ignore",
+        env: { ...process.env, DISPLAY },
+      });
+      _vncProcs.push(x11vncProc);
+      await new Promise(r => setTimeout(r, 1500));
+
+      if (x11vncProc.exitCode !== null) {
+        console.error("[VNC] x11vnc failed to start");
+        _vncStarting = false; return false;
+      }
+
+      // 3. Start websockify
+      const wsProc = spawnProc("python3", [
+        "-m", "websockify", WS_PORT, `127.0.0.1:${VNC_PORT}`,
+      ], { detached: false, stdio: "ignore", env: { ...process.env } });
+      _vncProcs.push(wsProc);
+      await new Promise(r => setTimeout(r, 1000));
+
+      if (wsProc.exitCode !== null) {
+        console.error("[VNC] websockify failed to start");
+        _vncStarting = false; return false;
+      }
+
+      // 4. Set DISPLAY for Playwright
+      process.env.DISPLAY = DISPLAY;
+      process.env.DZECK_VNC_DISPLAY = DISPLAY;
+
+      _vncStarted = true;
+      _vncStarting = false;
+      console.log(`[VNC] Stack ready: DISPLAY=${DISPLAY} VNC=${VNC_PORT} WS=${WS_PORT}`);
+      return true;
+    } catch (err: any) {
+      console.error("[VNC] Failed to start:", err.message);
+      _vncStarting = false;
+      return false;
+    }
+  }
+
+  app.post("/api/vnc/start", async (_req: any, res: any) => {
+    const started = await ensureVncRunning();
+    res.json({ started });
+  });
+
+  // ─── VNC status endpoint ──────────────────────────────────────────────────
+  app.get("/api/vnc/status", (_req: any, res: any) => {
+    const wsPort = 6081;
+    const vncPort = 5910;
+    const tcpCheck = net.createConnection({ port: vncPort, host: "127.0.0.1" });
+    tcpCheck.setTimeout(800);
+    tcpCheck.on("connect", () => {
+      tcpCheck.destroy();
+      res.json({ ready: true, ws_port: wsPort, vnc_port: vncPort });
+    });
+    tcpCheck.on("error", () => {
+      res.json({ ready: false, ws_port: wsPort, vnc_port: vncPort });
+    });
+    tcpCheck.on("timeout", () => {
+      tcpCheck.destroy();
+      res.json({ ready: false, ws_port: wsPort, vnc_port: vncPort });
+    });
+  });
+
   const httpServer = createServer(app);
 
-  httpServer.on("upgrade", (_req, socket) => {
-    socket.destroy();
+  // ─── WebSocket proxy for VNC (/vnc-ws → websockify :6081) ───────────────
+  httpServer.on("upgrade", (req: any, socket: any, head: any) => {
+    const url = req.url || "";
+
+    if (!url.startsWith("/vnc-ws")) {
+      socket.destroy();
+      return;
+    }
+
+    const http = require("node:http");
+    const proxyHeaders = Object.assign({}, req.headers, { host: "127.0.0.1:6081" });
+
+    const proxyReq = http.request({
+      host: "127.0.0.1",
+      port: 6081,
+      method: req.method || "GET",
+      path: "/",
+      headers: proxyHeaders,
+    });
+
+    proxyReq.on("upgrade", (_proxyRes: any, proxySocket: any, proxyHead: any) => {
+      const resLines = [
+        "HTTP/1.1 101 Switching Protocols",
+        `Upgrade: websocket`,
+        "Connection: Upgrade",
+        `Sec-WebSocket-Accept: ${_proxyRes.headers["sec-websocket-accept"] || ""}`,
+      ];
+      const proto = _proxyRes.headers["sec-websocket-protocol"];
+      if (proto) resLines.push(`Sec-WebSocket-Protocol: ${proto}`);
+      socket.write(resLines.join("\r\n") + "\r\n\r\n");
+
+      if (proxyHead && proxyHead.length > 0) proxySocket.write(proxyHead);
+      if (head && head.length > 0) proxySocket.write(head);
+
+      proxySocket.pipe(socket);
+      socket.pipe(proxySocket);
+
+      socket.on("close", () => proxySocket.destroy());
+      socket.on("error", () => proxySocket.destroy());
+      proxySocket.on("close", () => socket.destroy());
+      proxySocket.on("error", () => socket.destroy());
+    });
+
+    proxyReq.on("error", (err: any) => {
+      console.error("[VNC-WS] Proxy to websockify failed:", err.message);
+      try { socket.write("HTTP/1.1 503 VNC Not Ready\r\n\r\n"); } catch {}
+      socket.destroy();
+    });
+
+    proxyReq.end();
   });
 
   return httpServer;

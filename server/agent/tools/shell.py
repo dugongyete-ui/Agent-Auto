@@ -6,10 +6,11 @@ Falls back to local subprocess if E2B is unavailable.
 Provides: ShellTool class + backward-compatible functions.
 """
 import os
+import queue
 import subprocess
 import time
 import threading
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 
 from server.agent.models.tool_result import ToolResult
 from server.agent.tools.base import BaseTool, tool
@@ -18,6 +19,16 @@ E2B_ENABLED = bool(os.environ.get("E2B_API_KEY", ""))
 
 _shell_sessions: Dict[str, Dict[str, Any]] = {}
 _sessions_lock = threading.Lock()
+
+_stream_local = threading.local()
+
+def set_stream_queue(q: Optional[queue.Queue]) -> None:
+    """Register a streaming output queue for the current thread."""
+    _stream_local.queue = q
+
+def get_stream_queue() -> Optional[queue.Queue]:
+    """Get the streaming output queue for the current thread."""
+    return getattr(_stream_local, "queue", None)
 
 
 def _get_or_create_session(sid: str) -> Dict[str, Any]:
@@ -48,28 +59,76 @@ def _run_e2b(command: str, exec_dir: str = "/home/user", timeout: int = 90) -> D
 
 
 def _run_local(command: str, exec_dir: str = "/tmp", timeout: int = 90) -> Dict[str, Any]:
-    """Execute command locally via subprocess (fallback)."""
+    """Execute command locally via subprocess with streaming output support."""
+    import select
     try:
         if not os.path.isdir(exec_dir):
             exec_dir = "/tmp"
-        proc = subprocess.run(
+
+        env = {**os.environ, "PYTHONUNBUFFERED": "1", "TERM": "xterm-256color"}
+        proc = subprocess.Popen(
             command,
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             cwd=exec_dir,
-            timeout=timeout,
-            env={**os.environ, "PYTHONUNBUFFERED": "1", "TERM": "xterm-256color"},
+            env=env,
+            bufsize=1,
         )
+
+        stream_q = get_stream_queue()
+        stdout_lines = []
+        stderr_lines = []
+        start = time.time()
+
+        while True:
+            elapsed = time.time() - start
+            if elapsed > timeout:
+                proc.kill()
+                return {"success": False, "stdout": "".join(stdout_lines),
+                        "stderr": "Command timed out after {}s".format(timeout), "exit_code": -1}
+
+            try:
+                reads = [proc.stdout.fileno(), proc.stderr.fileno()]
+                r, _, _ = select.select(reads, [], [], 0.1)
+            except Exception:
+                break
+
+            for fd in r:
+                if fd == proc.stdout.fileno():
+                    line = proc.stdout.readline()
+                    if line:
+                        stdout_lines.append(line)
+                        if stream_q is not None:
+                            stream_q.put(("stdout", line.rstrip()))
+                elif fd == proc.stderr.fileno():
+                    line = proc.stderr.readline()
+                    if line:
+                        stderr_lines.append(line)
+                        if stream_q is not None:
+                            stream_q.put(("stderr", line.rstrip()))
+
+            if proc.poll() is not None:
+                for line in proc.stdout:
+                    stdout_lines.append(line)
+                    if stream_q is not None:
+                        stream_q.put(("stdout", line.rstrip()))
+                for line in proc.stderr:
+                    stderr_lines.append(line)
+                    if stream_q is not None:
+                        stream_q.put(("stderr", line.rstrip()))
+                break
+
+        if stream_q is not None:
+            stream_q.put(None)
+
         return {
             "success": proc.returncode == 0,
-            "stdout": proc.stdout or "",
-            "stderr": proc.stderr or "",
-            "exit_code": proc.returncode,
+            "stdout": "".join(stdout_lines),
+            "stderr": "".join(stderr_lines),
+            "exit_code": proc.returncode if proc.returncode is not None else -1,
         }
-    except subprocess.TimeoutExpired:
-        return {"success": False, "stdout": "", "stderr": "Command timed out", "exit_code": -1}
     except Exception as e:
         return {"success": False, "stdout": "", "stderr": str(e), "exit_code": -1}
 

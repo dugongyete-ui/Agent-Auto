@@ -204,13 +204,16 @@ if PLAYWRIGHT_ENABLED:
 
 
 class PlaywrightSession:
-    """Local headless Playwright browser session (used only when E2B is not available)."""
+    """Local Playwright browser session. Uses virtual display (Xvfb) for VNC streaming.
+    Falls back to headless if VNC is unavailable."""
 
     def __init__(self) -> None:
         self._pw: Any = None
         self._browser: Any = None
+        self._context: Any = None
         self._page: Any = None
         self._started = False
+        self._headless = True
         self.current_url: Optional[str] = None
         self.console_logs: List[str] = []
 
@@ -218,29 +221,57 @@ class PlaywrightSession:
         if not _playwright_available:
             return False
         try:
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.set_event_loop(asyncio.new_event_loop())
-            except RuntimeError:
-                asyncio.set_event_loop(asyncio.new_event_loop())
-
             from playwright.sync_api import sync_playwright
+
+            display = os.environ.get("DISPLAY", "") or os.environ.get("DZECK_VNC_DISPLAY", "")
+
+            if display:
+                self._headless = False
+                logger.info("[Browser] Using VNC display %s (non-headless).", display)
+            else:
+                self._headless = True
+                logger.info("[Browser] No DISPLAY found, using headless mode.")
+
             self._pw = sync_playwright().start()
-            launch_args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-extensions", "--disable-gpu"]
-            self._browser = self._pw.chromium.launch(headless=True, args=launch_args)
-            ctx = self._browser.new_context(
+
+            launch_args = [
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-setuid-sandbox",
+                "--no-zygote",
+                "--disable-extensions",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--window-size=1280,720",
+                "--window-position=0,0",
+            ]
+
+            if not display:
+                launch_args += ["--disable-gpu", "--single-process"]
+
+            env = dict(os.environ)
+            if display:
+                env["DISPLAY"] = display
+
+            self._browser = self._pw.chromium.launch(
+                headless=self._headless,
+                args=launch_args,
+                env=env if not self._headless else None,
+            )
+            self._context = self._browser.new_context(
                 viewport={"width": 1280, "height": 720},
                 user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             )
-            self._page = ctx.new_page()
+            self._page = self._context.new_page()
             self._page.on("console", lambda msg: self.console_logs.append("[{}] {}".format(msg.type, msg.text)))
             self._started = True
-            logger.info("[Browser] Local headless Playwright started.")
+            mode = "VNC non-headless" if not self._headless else "headless"
+            logger.info("[Browser] Playwright started (%s).", mode)
             return True
         except Exception as e:
-            logger.error("[Browser] Failed to start local Playwright: %s", e)
+            logger.error("[Browser] Failed to start Playwright: %s", e)
+            self._started = False
             return False
 
     def _capture_screenshot_b64(self) -> Optional[str]:
@@ -285,42 +316,52 @@ class PlaywrightSession:
             return ToolResult(success=False, message="View failed: {}".format(e))
 
     def click(self, x: float, y: float, button: str = "left") -> ToolResult:
-        if not self._started:
-            return ToolResult(success=False, message="No page loaded.")
+        if not self._started and not self.start():
+            return ToolResult(success=False, message="Playwright not available.")
         try:
             btn_map = {"left": "left", "right": "right", "middle": "middle"}
             self._page.mouse.click(x, y, button=btn_map.get(button, "left"))
-            self._page.wait_for_timeout(500)
+            self._page.wait_for_timeout(800)
             self.current_url = self._page.url
+            title = self._page.title()
+            content = self._page.inner_text("body")[:6000]
+            screenshot_b64 = self._capture_screenshot_b64()
             return ToolResult(
                 success=True,
-                message="Clicked at ({}, {}) with {} button.".format(x, y, button),
-                data={"x": x, "y": y, "button": button, "url": self.current_url},
+                message="Clicked ({}, {}). Page: {}\nURL: {}\n\n{}".format(x, y, title, self.current_url, content),
+                data={"x": x, "y": y, "button": button, "url": self.current_url, "title": title, "content": content, "screenshot_b64": screenshot_b64},
             )
         except Exception as e:
             return ToolResult(success=False, message="Click failed: {}".format(e))
 
     def type_text(self, text: str) -> ToolResult:
-        if not self._started:
-            return ToolResult(success=False, message="No page loaded.")
+        if not self._started and not self.start():
+            return ToolResult(success=False, message="Playwright not available.")
         try:
             self._page.keyboard.type(text)
-            return ToolResult(success=True, message="Typed: {}".format(repr(text)), data={"text": text})
+            self._page.wait_for_timeout(500)
+            screenshot_b64 = self._capture_screenshot_b64()
+            return ToolResult(
+                success=True,
+                message="Typed: {}".format(repr(text)),
+                data={"text": text, "url": self.current_url, "screenshot_b64": screenshot_b64},
+            )
         except Exception as e:
             return ToolResult(success=False, message="Type failed: {}".format(e))
 
     def scroll(self, direction: str, amount: int = 3) -> ToolResult:
-        if not self._started:
-            return ToolResult(success=False, message="No page loaded.")
+        if not self._started and not self.start():
+            return ToolResult(success=False, message="Playwright not available.")
         try:
             delta_y = amount * 200 if direction == "down" else -amount * 200
             self._page.mouse.wheel(0, delta_y)
-            self._page.wait_for_timeout(300)
+            self._page.wait_for_timeout(500)
             content = self._page.inner_text("body")[:4000]
+            screenshot_b64 = self._capture_screenshot_b64()
             return ToolResult(
                 success=True,
                 message="Scrolled {}.\n\n{}".format(direction, content),
-                data={"direction": direction, "amount": amount},
+                data={"direction": direction, "amount": amount, "url": self.current_url, "screenshot_b64": screenshot_b64},
             )
         except Exception as e:
             return ToolResult(success=False, message="Scroll failed: {}".format(e))
@@ -476,20 +517,50 @@ class HTTPBrowserSession:
         return "\n".join(lines)
 
 
+def _install_playwright_chromium() -> bool:
+    """Try to auto-install Playwright Chromium browser if not found."""
+    import subprocess
+    import sys
+    try:
+        logger.info("[Browser] Installing Playwright Chromium...")
+        result = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            capture_output=True, text=True, timeout=180
+        )
+        if result.returncode == 0:
+            logger.info("[Browser] Playwright Chromium installed successfully.")
+            return True
+        else:
+            logger.error("[Browser] Playwright Chromium install failed: %s", result.stderr[:500])
+            return False
+    except Exception as e:
+        logger.error("[Browser] Auto-install exception: %s", e)
+        return False
+
+
 def _make_session() -> Any:
     """Create the best available browser session.
-    E2B is used for shell/code execution only.
-    Browser automation uses local headless Playwright (no VNC needed).
+    Priority: Local Playwright > E2B > HTTP fallback.
+    Auto-installs Chromium if needed.
     """
     if _playwright_available and PLAYWRIGHT_ENABLED:
         sess = PlaywrightSession()
         if sess.start():
             logger.info("[Browser] Using local headless Playwright (screenshot mode).")
             return sess
-        logger.warning("[Browser] Local Playwright failed, falling back to HTTP.")
-    elif E2B_ENABLED:
+        logger.warning("[Browser] Local Playwright failed — trying auto-install Chromium...")
+        if _install_playwright_chromium():
+            sess2 = PlaywrightSession()
+            if sess2.start():
+                logger.info("[Browser] Playwright started after auto-install.")
+                return sess2
+        logger.warning("[Browser] Playwright still unavailable, trying fallback.")
+
+    if E2B_ENABLED:
         logger.info("[Browser] Using E2B cloud sandbox for browser automation.")
         return E2BBrowserSession()
+
+    logger.warning("[Browser] Using HTTP fallback (no screenshots).")
     return HTTPBrowserSession()
 
 

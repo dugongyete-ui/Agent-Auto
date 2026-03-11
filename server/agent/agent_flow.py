@@ -547,6 +547,7 @@ class DzeckAgent:
         self.state = FlowState.IDLE
         self.parser = RobustJsonParser()
         self._session_service: Any = None
+        self._created_files: List[Dict[str, Any]] = []
 
     async def _get_session_service(self) -> Any:
         """Lazy-load session service."""
@@ -859,13 +860,72 @@ class DzeckAgent:
         loop = asyncio.get_event_loop()
         _res = resolved
         _args = dict(fn_args)
-        tool_result = await loop.run_in_executor(
-            None, lambda: execute_tool(_res, _args)
-        )
+
+        if _res == "shell_exec" and not bool(os.environ.get("E2B_API_KEY", "")):
+            import queue as _queue_mod
+            from server.agent.tools.shell import set_stream_queue
+            stream_q: "_queue_mod.Queue" = _queue_mod.Queue()
+            stream_lines: list = []
+
+            def _run_shell_with_stream():
+                set_stream_queue(stream_q)
+                try:
+                    return execute_tool(_res, _args)
+                finally:
+                    set_stream_queue(None)
+
+            future = loop.run_in_executor(None, _run_shell_with_stream)
+
+            while not future.done():
+                await asyncio.sleep(0.15)
+                batch = []
+                try:
+                    while True:
+                        item = stream_q.get_nowait()
+                        if item is None:
+                            break
+                        batch.append(item)
+                except _queue_mod.Empty:
+                    pass
+                if batch:
+                    chunk = "\n".join(("[stderr] " if t == "stderr" else "") + l for t, l in batch)
+                    stream_lines.extend(batch)
+                    yield make_event("tool_stream", tool_call_id=tool_call_id, chunk=chunk)
+
+            try:
+                while True:
+                    item = stream_q.get_nowait()
+                    if item is None:
+                        break
+                    stream_lines.append(item)
+            except _queue_mod.Empty:
+                pass
+
+            tool_result = await future
+        else:
+            tool_result = await loop.run_in_executor(
+                None, lambda: execute_tool(_res, _args)
+            )
 
         tool_content = build_tool_content(resolved, tool_result)
         result_status = ToolStatus.CALLED if tool_result.success else ToolStatus.ERROR
         fn_result = str(tool_result.message)[:3000] if tool_result.message else ""
+
+        # ── Track files created by file_write / shell_exec ──
+        if tool_result.success and resolved in ("file_write", "file_str_replace"):
+            data = tool_result.data or {}
+            durl = data.get("download_url", "")
+            fpath = data.get("file", data.get("path", fn_args.get("file", fn_args.get("path", ""))))
+            fname = os.path.basename(fpath) if fpath else ""
+            if durl and fname:
+                already = any(f["download_url"] == durl for f in self._created_files)
+                if not already:
+                    self._created_files.append({
+                        "filename": fname,
+                        "path": fpath,
+                        "download_url": durl,
+                        "mime": data.get("mime", ""),
+                    })
 
         # ── 3. Emit result event ──
         yield make_event(
@@ -1331,6 +1391,9 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
             if self.session_id and svc:
                 await svc.complete_session(self.session_id, success=True)
 
+            if self._created_files:
+                yield make_event("files", files=self._created_files)
+
             yield make_event("done", success=True, session_id=self.session_id)
 
         except Exception as e:
@@ -1344,6 +1407,8 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                     pass
             yield make_event("error", error="Agent error: {}".format(e))
             traceback.print_exc(file=sys.stderr)
+            if self._created_files:
+                yield make_event("files", files=self._created_files)
             yield make_event("done", success=False, session_id=self.session_id)
 
 

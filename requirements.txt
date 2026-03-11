@@ -21,3 +21,4 @@ websockify
 websockify
 e2b
 playwright
+websockify

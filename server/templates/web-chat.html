@@ -398,6 +398,25 @@
     #ss-modal.open{display:flex}
     #ss-modal img{max-width:95vw;max-height:90vh;border-radius:10px;box-shadow:var(--shadow-lg)}
 
+    /* ── File delivery ── */
+    .files-delivery{margin:6px 0;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:12px}
+    .files-delivery-title{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px}
+    .files-delivery-list{display:flex;flex-wrap:wrap;gap:7px}
+    a.file-chip{display:flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--border);
+      border-radius:9px;padding:7px 11px;font-size:12px;color:var(--text);text-decoration:none;
+      transition:all .15s;cursor:pointer}
+    a.file-chip:hover{border-color:var(--brand);background:var(--surface2);color:var(--brand)}
+    .file-chip-icon{font-size:18px;flex-shrink:0}
+    .file-chip-name{font-weight:500;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .file-chip-dl{font-size:11px;color:var(--muted);white-space:nowrap}
+
+    /* ── Terminal streaming ── */
+    .tool-terminal{margin:4px 0 2px 22px;border-radius:9px;overflow:hidden;border:1px solid var(--border);background:#0d1117}
+    .tool-terminal-header{display:flex;align-items:center;gap:5px;padding:5px 10px;background:#161b22;border-bottom:1px solid var(--border)}
+    .tool-terminal-header span{font-size:11px;color:#8b949e;font-family:monospace}
+    .tool-terminal-header::before{content:'';width:8px;height:8px;border-radius:50%;background:#f85149;flex-shrink:0;box-shadow:12px 0 0 #f0883e,24px 0 0 #3fb950}
+    .tool-terminal-output{margin:0;padding:8px 10px;font-size:11px;font-family:'Courier New',Courier,monospace;color:#e6edf3;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;background:#0d1117}
+
     /* ── Error toast ── */
     #toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);
       background:#fff;border:1px solid #fecaca;color:#991b1b;padding:8px 14px;border-radius:9px;
@@ -595,20 +614,23 @@
   <img id="ss-modal-img" src="" alt=""/>
 </div>
 
-<!-- noVNC (loaded async, screenshot mode works without it) -->
+<!-- noVNC loader -->
 <script type="module">
   const CDNS = [
     'https://cdn.jsdelivr.net/gh/novnc/noVNC@v1.5.0/core/rfb.js',
     'https://unpkg.com/@novnc/novnc@1.5.0/core/rfb.js',
+    'https://cdn.jsdelivr.net/npm/@novnc/novnc@1.5.0/core/rfb.js',
   ];
   for (const url of CDNS) {
     try {
       const m = await import(url);
       window._RFB = m.default || m;
       console.log('[noVNC] Loaded from', url);
+      window.dispatchEvent(new CustomEvent('novnc-ready'));
       break;
-    } catch(e) {}
+    } catch(e) { console.warn('[noVNC] CDN failed:', url, e.message); }
   }
+  if (!window._RFB) console.error('[noVNC] All CDNs failed — screenshot mode active');
 </script>
 
 <script>
@@ -1151,18 +1173,16 @@ function updateToolChip(tcId, evt) {
 function showToolPanel() {
   toolPanel.classList.add('open');
   document.getElementById('computer-btn').classList.add('on');
-  if (S.latestScreenshot) {
+  if (S.latestScreenshot && !S.rfb) {
     tpSS.src = S.latestScreenshot;
     tpSS.style.display = 'block';
     tpEmpty.style.display = 'none';
-    tpStatus.textContent = 'Screenshot diperbarui';
-  } else {
+  } else if (!S.rfb) {
     tpSS.style.display = 'none';
     tpEmpty.style.display = 'flex';
-    tpStatus.textContent = 'Menunggu...';
   }
   if (!S.rfb) {
-    setTimeout(() => connectVNC(S.vncPort || 6081), 300);
+    setTimeout(() => connectVNC(), 300);
   }
 }
 
@@ -1170,6 +1190,8 @@ function hideToolPanel() {
   toolPanel.classList.remove('open');
   document.getElementById('computer-btn').classList.remove('on');
   disconnectVNC();
+  _vncRetries = 0;
+  clearTimeout(_vncRetryTimer);
 }
 
 function toggleComputerPanel() {
@@ -1189,6 +1211,7 @@ function updatePanelTool(type, label, arg, icon) {
 }
 
 function updatePanelScreenshot(src, url) {
+  S.latestScreenshot = src;
   if (S.rfb) return;
   tpSS.src = src; tpSS.style.display = 'block';
   tpEmpty.style.display = 'none';
@@ -1231,47 +1254,153 @@ function togglePlanBar() {
 }
 
 // ═══════════════════════════════════════════════════
-// VNC
+// VNC — Live streaming real via noVNC
 // ═══════════════════════════════════════════════════
-function connectVNC(wsPort) {
-  if (!window._RFB) return;
-  disconnectVNC();
-  const proto = location.protocol==='https:'?'wss:':'ws:';
-  const wsUrl = `${proto}//${location.host}/vnc-ws`;
+
+let _vncRetryTimer = null;
+let _vncRetries = 0;
+const VNC_MAX_RETRIES = 20;
+const VNC_RETRY_MS = 2000;
+
+async function checkVncReady() {
   try {
-    S.rfb = new window._RFB(vncCont, wsUrl, { credentials:{password:''}, shared:true, wsProtocols:['binary'] });
-    S.rfb.scaleViewport = true; S.rfb.viewOnly = true;
+    const r = await fetch('/api/vnc/status');
+    const d = await r.json();
+    return d.ready === true;
+  } catch { return false; }
+}
+
+async function startVncIfNeeded() {
+  try {
+    await fetch('/api/vnc/start', { method: 'POST' });
+  } catch {}
+}
+
+async function connectVNC() {
+  if (S.rfb) return;
+  clearTimeout(_vncRetryTimer);
+
+  tpStatus.textContent = 'Menghubungkan ke Komputer Dzeck...';
+  tpLive.classList.remove('on');
+
+  const rfbAvail = !!window._RFB;
+  if (!rfbAvail) {
+    tpStatus.textContent = 'Menunggu noVNC...';
+    window.addEventListener('novnc-ready', () => connectVNC(), { once: true });
+    startVncIfNeeded();
+    return;
+  }
+
+  if (_vncRetries === 0) startVncIfNeeded();
+
+  const ready = await checkVncReady();
+  if (!ready) {
+    _vncRetries++;
+    if (_vncRetries <= VNC_MAX_RETRIES) {
+      tpStatus.textContent = `Memulai komputer virtual... (${_vncRetries}/${VNC_MAX_RETRIES})`;
+      _vncRetryTimer = setTimeout(() => connectVNC(), VNC_RETRY_MS);
+    } else {
+      tpStatus.textContent = 'Komputer virtual tidak tersedia';
+      _vncRetries = 0;
+    }
+    return;
+  }
+
+  _vncRetries = 0;
+  disconnectVNC();
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${proto}//${location.host}/vnc-ws`;
+
+  try {
+    S.rfb = new window._RFB(vncCont, wsUrl, {
+      credentials: { password: '' },
+      shared: true,
+      wsProtocols: ['binary'],
+    });
+    S.rfb.scaleViewport = true;
+    S.rfb.resizeSession = false;
+    S.rfb.viewOnly = !S.isTakeover;
+    S.rfb.showDotCursor = false;
+
     vncCont.style.display = 'none';
-    let vncWasConnected = false;
+    let connected = false;
+
     S.rfb.addEventListener('connect', () => {
-      vncWasConnected = true;
-      vncCont.style.display='block'; tpSS.style.display='none'; tpEmpty.style.display='none';
-      tpLive.classList.add('on'); tpStatus.textContent='Browser terhubung (LIVE)';
+      connected = true;
+      vncCont.style.display = 'block';
+      tpSS.style.display = 'none';
+      tpEmpty.style.display = 'none';
+      tpLive.classList.add('on');
+      tpStatus.textContent = S.isTakeover ? 'Mode interaktif — kamu mengontrol' : 'LIVE — klik "Ambil Kendali" untuk kontrol';
+      console.log('[VNC] Connected to live desktop');
     });
-    S.rfb.addEventListener('disconnect', () => {
-      vncCont.style.display='none'; tpLive.classList.remove('on');
-      if (S.latestScreenshot) { tpSS.src=S.latestScreenshot; tpSS.style.display='block'; tpEmpty.style.display='none'; }
-      else { tpSS.style.display='none'; tpEmpty.style.display='flex'; }
-      tpStatus.textContent = vncWasConnected ? 'Koneksi LIVE terputus' : 'Menunggu...';
-      S.rfb=null;
+
+    S.rfb.addEventListener('disconnect', (e) => {
+      vncCont.style.display = 'none';
+      tpLive.classList.remove('on');
+      S.rfb = null;
+      if (connected) {
+        tpStatus.textContent = 'Koneksi terputus — menghubungkan ulang...';
+        _vncRetryTimer = setTimeout(() => connectVNC(), 3000);
+      } else {
+        _vncRetries++;
+        if (_vncRetries <= VNC_MAX_RETRIES && toolPanel.classList.contains('open')) {
+          tpStatus.textContent = `Menghubungkan ulang... (${_vncRetries}/${VNC_MAX_RETRIES})`;
+          _vncRetryTimer = setTimeout(() => connectVNC(), VNC_RETRY_MS);
+        } else {
+          tpStatus.textContent = 'Komputer virtual tidak tersedia';
+          _vncRetries = 0;
+        }
+        console.warn('[VNC] Disconnect before connect — retry', _vncRetries, e.detail);
+      }
+      if (S.latestScreenshot) { tpSS.src = S.latestScreenshot; tpSS.style.display = 'block'; tpEmpty.style.display = 'none'; }
+      else { tpEmpty.style.display = 'flex'; tpSS.style.display = 'none'; }
     });
-  } catch(e) { S.rfb=null; }
+
+    S.rfb.addEventListener('credentialsrequired', () => {
+      S.rfb.sendCredentials({ password: '' });
+    });
+
+    S.rfb.addEventListener('securityfailure', () => {
+      tpStatus.textContent = 'Gagal autentikasi VNC';
+    });
+
+  } catch(e) {
+    console.error('[VNC] Error:', e);
+    S.rfb = null;
+    tpStatus.textContent = 'Error koneksi VNC';
+  }
 }
 
 function disconnectVNC() {
-  if (S.rfb) { try{S.rfb.disconnect();}catch{} S.rfb=null; }
-  vncCont.style.display='none'; tpLive.classList.remove('on');
+  clearTimeout(_vncRetryTimer);
+  if (S.rfb) {
+    try { S.rfb.disconnect(); } catch {}
+    S.rfb = null;
+  }
+  vncCont.style.display = 'none';
+  tpLive.classList.remove('on');
 }
 
 function toggleTakeover() {
   S.isTakeover = !S.isTakeover;
   const btn = document.getElementById('takeover-btn');
   const lbl = document.getElementById('takeover-lbl');
-  if (S.rfb) S.rfb.viewOnly = !S.isTakeover;
-  btn.className = `${S.isTakeover?'active':''}`;
   btn.id = 'takeover-btn';
+
+  if (S.rfb) {
+    S.rfb.viewOnly = !S.isTakeover;
+    if (S.isTakeover) {
+      vncCont.focus();
+      S.rfb.focus();
+    }
+  }
+  btn.className = S.isTakeover ? 'active' : '';
   lbl.textContent = S.isTakeover ? 'Lepas Kendali' : 'Ambil Kendali';
   tpStatus.textContent = S.isTakeover ? 'Mode interaktif — kamu mengontrol' : 'Mode tampilan saja';
+
+  if (!S.rfb && S.isTakeover) connectVNC();
 }
 
 // ═══════════════════════════════════════════════════
@@ -1348,6 +1477,16 @@ function handleEvent(evt) {
       } else {
         updateToolChip(tcId, evt);
       }
+      if (evtStatus === 'called' || evtStatus === 'error') {
+        clearTerminalStream(tcId);
+      }
+      break;
+    }
+
+    case 'tool_stream': {
+      const stcId = evt.tool_call_id || '';
+      const chunk = evt.chunk || '';
+      appendTerminalStream(stcId, chunk);
       break;
     }
 
@@ -1381,6 +1520,12 @@ function handleEvent(evt) {
       }
       break;
 
+    case 'files': {
+      const flist = evt.files || [];
+      if (flist.length > 0) renderCreatedFiles(flist);
+      break;
+    }
+
     case 'done': finalize(); break;
     case 'error': {
       hideThinking();
@@ -1393,6 +1538,68 @@ function handleEvent(evt) {
       break;
     }
   }
+}
+
+// ═══════════════════════════════════════════════════
+// TERMINAL STREAMING (shell output real-time)
+// ═══════════════════════════════════════════════════
+const _termStreams = {};
+
+function appendTerminalStream(tcId, chunk) {
+  if (!tcId || !chunk) return;
+  showToolPanel();
+
+  let termEl = document.getElementById(`term-${tcId}`);
+  const parent = document.getElementById(`tc-${tcId}`)?.parentElement;
+  if (!parent) {
+    tpStatus.textContent = chunk.split('\n').pop() || chunk;
+    return;
+  }
+  if (!termEl) {
+    termEl = document.createElement('div');
+    termEl.id = `term-${tcId}`;
+    termEl.className = 'tool-terminal';
+    termEl.innerHTML = '<div class="tool-terminal-header"><span>Terminal</span></div><pre class="tool-terminal-output"></pre>';
+    parent.appendChild(termEl);
+  }
+  const pre = termEl.querySelector('pre');
+  if (pre) {
+    pre.textContent += (pre.textContent ? '\n' : '') + chunk;
+    pre.scrollTop = pre.scrollHeight;
+    const lastLine = chunk.split('\n').filter(Boolean).pop() || '';
+    if (lastLine) tpStatus.textContent = lastLine.substring(0, 80);
+  }
+  scrollBottom();
+}
+
+function clearTerminalStream(tcId) {
+  const termEl = document.getElementById(`term-${tcId}`);
+  if (termEl) termEl.remove();
+}
+
+function renderCreatedFiles(files) {
+  const msgs = document.getElementById('messages');
+  const wrap = document.createElement('div');
+  wrap.className = 'msg-ai';
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+
+  const items = files.map(f => {
+    const ext = (f.filename||'').split('.').pop()?.toLowerCase() || '';
+    const iconMap = {py:'🐍',js:'📜',ts:'📜',html:'🌐',css:'🎨',json:'📋',csv:'📊',txt:'📄',md:'📝',zip:'📦',png:'🖼️',jpg:'🖼️',jpeg:'🖼️',gif:'🖼️',mp4:'🎬',pdf:'📄'};
+    const icon = iconMap[ext] || '📁';
+    const url = f.download_url || '#';
+    return `<a href="${url}" download="${esc(f.filename||'file')}" class="file-chip" target="_blank">
+      <span class="file-chip-icon">${icon}</span>
+      <span class="file-chip-name">${esc(f.filename||'file')}</span>
+      <span class="file-chip-dl">⬇ Unduh</span>
+    </a>`;
+  }).join('');
+
+  body.innerHTML = `<div class="files-delivery"><div class="files-delivery-title">📎 File yang dibuat</div><div class="files-delivery-list">${items}</div></div>`;
+  wrap.appendChild(body);
+  msgs.appendChild(wrap);
+  scrollBottom(true);
 }
 
 function finalize() {
