@@ -24,13 +24,18 @@ Implements Manus-like autonomous agent architecture with class-based tools, Plan
 - **Xvfb** virtual display on `:10`, screen `1280x720x24`
 - **Fluxbox** lightweight window manager for proper window rendering
 - **xsetroot** sets solid background color (`#1a1a2e`) so display is not black
-- **Chromium** (Playwright's bundled chromium-1208) launched on the virtual display on boot
+- **No standalone Chromium on boot** — VNC display shows the agent's Playwright browser when it works. No separate kiosk browser.
+- **Playwright agent browser** appears on VNC display in `--kiosk --start-maximized` mode when the AI agent runs browser tools
 - **x11vnc** VNC server on port `5910` (NOT 5900 — avoids system conflicts)
 - **Native WS→TCP proxy** in Node.js `routes.ts`: browser connects to `/vnc-ws` WebSocket → proxied directly to TCP port 5910 (no websockify needed)
-- **Stale lock cleanup** on each server restart: removes `/tmp/.X10-lock` and `/tmp/.X11-unix/X10` before starting Xvfb
+- **Stale lock cleanup** on each server restart: removes `/tmp/.X10-lock` and `/tmp/.X11-unix/X10`
+- **Fluxbox kiosk config**: `routes.ts` writes `~/.fluxbox/init` (toolbar hidden, no decorations) and `~/.fluxbox/apps` (all windows maximized, no decorations) before launching Fluxbox
 - **noVNC** client loaded from CDN in `server/templates/vnc-view.html` and `server/templates/web-chat.html`
-- DISPLAY env var set to `:10` for all spawned subprocesses (Playwright)
+- DISPLAY env var set to `:10` early at route initialization (before server accepts requests) for all spawned subprocesses
+- **Mobile VNC Toolbar** (`vnc-view.html`): floating left-side toolbar with takeover, keyboard, clipboard, Ctrl+Alt+Del, Esc, Tab, F5, F11 buttons; collapsible with toggle tab
+- **Web Chat VNC Controls** (`web-chat.html`): toolbar row (#tp-controls) appears when takeover is active — keyboard, clipboard/paste, Esc, Tab, F5/Refresh, Enter buttons
 - **Nix packages**: `xorg.xsetroot`, `xorg.xdpyinfo`, `fluxbox`, `feh` added for VNC display management
+- **Setup script** (`setup.sh`): checks VNC system packages, installs Python/Node deps, configures Fluxbox, creates .env template
 
 ## MCP Configuration
 

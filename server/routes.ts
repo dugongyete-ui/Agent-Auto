@@ -484,69 +484,49 @@ export async function registerRoutes(app: any): Promise<Server> {
       process.env.DISPLAY = VNC_DISPLAY;
       process.env.DZECK_VNC_DISPLAY = VNC_DISPLAY;
 
-      // 5. Start a lightweight window manager (fluxbox) so browser windows render properly
+      // 5. Start a lightweight window manager (fluxbox) in kiosk mode
       const fluxbox = findBin("fluxbox", "");
       if (fluxbox) {
         try {
+          const fbDir = path.join(process.env.HOME || "/home/runner", ".fluxbox");
+          if (!fs.existsSync(fbDir)) fs.mkdirSync(fbDir, { recursive: true });
+
+          fs.writeFileSync(path.join(fbDir, "init"), [
+            "session.screen0.toolbar.visible: false",
+            "session.screen0.toolbar.autoHide: true",
+            "session.screen0.toolbar.widthPercent: 0",
+            "session.screen0.slit.autoHide: true",
+            "session.screen0.defaultDeco: NONE",
+            "session.screen0.workspaces: 1",
+            "session.screen0.window.focus.alpha: 255",
+            "session.screen0.window.unfocus.alpha: 255",
+            "session.screen0.tabs.usePixmap: false",
+            "session.styleFile: /dev/null",
+          ].join("\n") + "\n");
+
+          fs.writeFileSync(path.join(fbDir, "apps"), [
+            "[app] (name=.*) (class=.*)",
+            "  [Maximized] {yes}",
+            "  [Deco] {NONE}",
+            "  [Dimensions] {1280 720}",
+            "  [Position] {0 0}",
+            "[end]",
+          ].join("\n") + "\n");
+
           const fbProc = spawnProc(fluxbox, [], {
             detached: false, stdio: "ignore",
             env: { ...process.env, DISPLAY: VNC_DISPLAY },
           });
           _vncProcs.push(fbProc);
           await new Promise(r => setTimeout(r, 1000));
-          console.log("[VNC] Fluxbox window manager started");
+          console.log("[VNC] Fluxbox window manager started (kiosk mode)");
         } catch {}
       }
 
-      // 6. Launch Chromium on the virtual display so it's not blank
-      // Priority: Playwright bundled chromium > system chromium
-      let chromiumPath = "";
-
-      // Check Playwright cache first (most reliable)
-      const pwCachePatterns = [
-        "/home/runner/workspace/.cache/ms-playwright/chromium-*/chrome-linux64/chrome",
-        "/home/runner/workspace/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
-        "/home/runner/.cache/ms-playwright/chromium-*/chrome-linux64/chrome",
-        "/home/runner/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
-      ];
-      for (const pattern of pwCachePatterns) {
-        try {
-          const found = execSync(
-            `ls ${pattern} 2>/dev/null | tail -1`,
-            { encoding: "utf-8", timeout: 3000 }
-          ).trim();
-          if (found && fs.existsSync(found)) {
-            chromiumPath = found;
-            break;
-          }
-        } catch {}
-      }
-
-      // Fallback to system chromium
-      if (!chromiumPath) {
-        chromiumPath = findBin("chromium", "") || findBin("chromium-browser", "") || findBin("google-chrome", "");
-      }
-
-      if (chromiumPath) {
-        try {
-          const chromeProc = spawnProc(chromiumPath, [
-            "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
-            "--disable-software-rasterizer", "--disable-setuid-sandbox",
-            "--no-zygote", "--disable-extensions",
-            "--window-size=1280,720", "--start-maximized",
-            "https://www.google.com",
-          ], {
-            detached: false, stdio: "ignore",
-            env: { ...process.env, DISPLAY: VNC_DISPLAY },
-          });
-          _vncProcs.push(chromeProc);
-          console.log(`[VNC] Chromium launched on display from: ${chromiumPath}`);
-        } catch (e: any) {
-          console.warn("[VNC] Chromium launch error:", e.message);
-        }
-      } else {
-        console.warn("[VNC] No Chromium binary found — VNC display will show background only");
-      }
+      // 6. No standalone Chromium launched here — the Playwright agent browser
+      // will appear on the VNC display when the AI agent runs browser actions.
+      // This ensures the user sees the ACTUAL agent browsing, not a static page.
+      console.log("[VNC] Display ready — agent browser will appear here when working");
 
       _vncStarted = true;
       _vncStarting = false;

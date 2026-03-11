@@ -376,11 +376,32 @@
     #tp-content{flex:1;min-height:0;display:flex;flex-direction:column;position:relative;overflow:hidden}
     #tp-browser-area{flex:1;position:relative;display:flex;align-items:stretch;overflow:hidden}
     #vnc-container{position:absolute;inset:0;background:#111;z-index:2;display:none}
+    #vnc-container canvas{width:100%!important;height:100%!important;object-fit:contain}
     #tp-screenshot{position:absolute;inset:0;object-fit:contain;width:100%;height:100%;
       background:var(--surface2);cursor:pointer;z-index:1;display:none}
     #tp-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
       height:100%;color:var(--muted);gap:9px;padding:20px;text-align:center;font-size:13px}
     #tp-empty svg{opacity:.4}
+
+    #tp-controls{display:none;align-items:center;gap:4px;padding:5px 8px;
+      border-top:1px solid var(--border);flex-shrink:0;background:var(--surface2);overflow-x:auto;-webkit-overflow-scrolling:touch}
+    #tp-controls.show{display:flex}
+    .tpc-btn{height:32px;min-width:32px;padding:0 8px;border:1px solid var(--border);background:var(--surface);
+      color:var(--text2);border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+      font-size:11px;font-weight:600;white-space:nowrap;transition:all .15s;flex-shrink:0}
+    .tpc-btn:active{background:var(--brand);color:#fff;border-color:var(--brand)}
+    .tpc-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+    #vnc-clip-dialog{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:400;
+      background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;
+      width:90%;max-width:300px;box-shadow:var(--shadow-lg)}
+    #vnc-clip-dialog h4{font-size:13px;color:var(--text);margin:0 0 8px;font-weight:600}
+    #vnc-clip-dialog textarea{width:100%;height:70px;background:var(--surface2);color:var(--text);
+      border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12px;resize:none;outline:none}
+    .vcd-btns{display:flex;gap:6px;justify-content:flex-end;margin-top:8px}
+    .vcd-cancel{padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);
+      color:var(--muted);font-size:11px;cursor:pointer}
+    .vcd-send{padding:5px 12px;border-radius:6px;border:none;background:var(--brand);color:#fff;
+      font-size:11px;cursor:pointer;font-weight:600}
 
     #tp-footer{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;
       border-top:1px solid var(--border);flex-shrink:0;background:var(--surface);gap:8px}
@@ -596,6 +617,33 @@
             </svg>
             Browser akan muncul saat Dzeck mulai bekerja
           </div>
+        </div>
+      </div>
+      <div id="tp-controls">
+        <button class="tpc-btn" onclick="vncShowKeyboard()" title="Keyboard">
+          <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="7" y1="16" x2="17" y2="16"/></svg>
+        </button>
+        <button class="tpc-btn" onclick="vncOpenClipboard()" title="Paste teks">
+          <svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+        </button>
+        <button class="tpc-btn" onclick="vncSendKey('Escape')" title="Esc">Esc</button>
+        <button class="tpc-btn" onclick="vncSendKey('Tab')" title="Tab">Tab</button>
+        <button class="tpc-btn" onclick="vncSendKey('F5')" title="Refresh">
+          <svg viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+        <button class="tpc-btn" onclick="vncSendKey('Enter')" title="Enter">
+          <svg viewBox="0 0 24 24"><path d="M9 10l-5 5 5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg>
+        </button>
+      </div>
+      <input type="text" id="vnc-kb-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        style="position:fixed;bottom:-100px;left:0;width:1px;height:1px;opacity:0.01;z-index:-1">
+      <div id="vnc-clip-overlay" onclick="vncCloseClipboard()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:399"></div>
+      <div id="vnc-clip-dialog" style="display:none">
+        <h4>Paste teks ke Komputer</h4>
+        <textarea id="vnc-clip-text" placeholder="Ketik atau paste teks..."></textarea>
+        <div class="vcd-btns">
+          <button class="vcd-cancel" onclick="vncCloseClipboard()">Batal</button>
+          <button class="vcd-send" onclick="vncSendClipboard()">Kirim</button>
         </div>
       </div>
       <div id="tp-footer">
@@ -1401,6 +1449,69 @@ function toggleTakeover() {
   tpStatus.textContent = S.isTakeover ? 'Mode interaktif — kamu mengontrol' : 'Mode tampilan saja';
 
   if (!S.rfb && S.isTakeover) connectVNC();
+
+  const tpCtrl = document.getElementById('tp-controls');
+  if (S.isTakeover) tpCtrl.classList.add('show');
+  else tpCtrl.classList.remove('show');
+}
+
+const _vncKeyMap = {
+  'Escape':0xFF1B,'Tab':0xFF09,'Enter':0xFF0D,'Backspace':0xFF08,
+  'Delete':0xFFFF,'F1':0xFFBE,'F2':0xFFBF,'F3':0xFFC0,'F4':0xFFC1,
+  'F5':0xFFC2,'F6':0xFFC3,'F7':0xFFC4,'F8':0xFFC5,'F9':0xFFC6,
+  'F10':0xFFC7,'F11':0xFFC8,'F12':0xFFC9,
+  'ArrowLeft':0xFF51,'ArrowUp':0xFF52,'ArrowRight':0xFF53,'ArrowDown':0xFF54,
+};
+
+function vncSendKey(keyName) {
+  if (!S.rfb) return;
+  if (!S.isTakeover) toggleTakeover();
+  const code = _vncKeyMap[keyName];
+  if (code) { S.rfb.sendKey(code,null,true); S.rfb.sendKey(code,null,false); }
+}
+
+function vncShowKeyboard() {
+  if (!S.isTakeover) toggleTakeover();
+  const inp = document.getElementById('vnc-kb-input');
+  inp.style.position='fixed'; inp.style.bottom='0'; inp.style.left='0';
+  inp.style.width='100%'; inp.style.height='40px'; inp.style.opacity='0.01'; inp.style.zIndex='250';
+  inp.focus(); inp.click();
+}
+
+(function() {
+  const inp = document.getElementById('vnc-kb-input');
+  inp.addEventListener('input', function() {
+    if (!S.rfb || S.rfb.viewOnly) return;
+    const val = inp.value;
+    if (val) {
+      for (const ch of val) { S.rfb.sendKey(ch.charCodeAt(0),null,true); S.rfb.sendKey(ch.charCodeAt(0),null,false); }
+      inp.value = '';
+    }
+  });
+  inp.addEventListener('keydown', function(e) {
+    if (!S.rfb || S.rfb.viewOnly) return;
+    if (_vncKeyMap[e.key]) { e.preventDefault(); S.rfb.sendKey(_vncKeyMap[e.key],null,true); S.rfb.sendKey(_vncKeyMap[e.key],null,false); }
+  });
+})();
+
+function vncOpenClipboard() {
+  document.getElementById('vnc-clip-overlay').style.display='block';
+  document.getElementById('vnc-clip-dialog').style.display='block';
+}
+function vncCloseClipboard() {
+  document.getElementById('vnc-clip-overlay').style.display='none';
+  document.getElementById('vnc-clip-dialog').style.display='none';
+}
+function vncSendClipboard() {
+  if (!S.rfb) { vncCloseClipboard(); return; }
+  if (!S.isTakeover) toggleTakeover();
+  const text = document.getElementById('vnc-clip-text').value;
+  if (text) {
+    S.rfb.clipboardPasteFrom(text);
+    for (const ch of text) { S.rfb.sendKey(ch.charCodeAt(0),null,true); S.rfb.sendKey(ch.charCodeAt(0),null,false); }
+  }
+  vncCloseClipboard();
+  document.getElementById('vnc-clip-text').value = '';
 }
 
 // ═══════════════════════════════════════════════════

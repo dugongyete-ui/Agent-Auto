@@ -35,6 +35,21 @@ print_ok "Python: $($PYTHON --version)"
 if ! command -v node &>/dev/null; then print_error "Node.js not found! Install Node.js 18+"; exit 1; fi
 print_ok "Node.js: $(node --version) / npm: $(npm --version)"
 
+# ─── Nix system packages (VNC + display) ─────────────────────────────────────
+print_step "Checking VNC/display system packages..."
+VNC_PKGS_OK=true
+for bin in Xvfb x11vnc fluxbox xsetroot xdpyinfo feh; do
+  if command -v "$bin" &>/dev/null; then
+    print_ok "$bin found: $(which $bin)"
+  else
+    print_warn "$bin not found — add to replit.nix: pkgs.xorg.xsetroot, pkgs.xorg.xdpyinfo, pkgs.fluxbox, pkgs.feh"
+    VNC_PKGS_OK=false
+  fi
+done
+if [ "$VNC_PKGS_OK" = true ]; then
+  print_ok "All VNC/display packages ready"
+fi
+
 # ─── npm packages ─────────────────────────────────────────────────────────────
 print_step "Installing Node.js packages..."
 cd "$PROJECT_ROOT"
@@ -49,19 +64,12 @@ if $PYTHON -m pip install --help 2>&1 | grep -q 'break-system'; then
   PIP_FLAGS="--break-system-packages"
 fi
 
-# Packages actually used in this project (synced Mar 2026):
-# - pydantic: data validation for models (Plan, Step, Memory, ToolResult)
-# - playwright: headless browser automation (browser.py local fallback)
-# - e2b: cloud sandbox for isolated shell/code execution (e2b_sandbox.py)
-# - redis: session state caching (db/cache.py — optional, lazy import)
-# - motor: MongoDB async driver (db/session_store.py — optional, lazy import)
 PYTHON_PACKAGES=(
   "pydantic>=2.0.0"
   "playwright>=1.40.0"
   "e2b>=0.17.0"
   "redis>=5.0.0"
   "motor>=3.7.0"
-  "websockify>=0.11.0"
 )
 
 for pkg in "${PYTHON_PACKAGES[@]}"; do
@@ -75,12 +83,38 @@ for pkg in "${PYTHON_PACKAGES[@]}"; do
 done
 
 # ─── Playwright browser ───────────────────────────────────────────────────────
-print_step "Installing Playwright browser (Chromium headless)..."
+print_step "Installing Playwright browser (Chromium)..."
 if $PYTHON -m playwright install chromium --quiet 2>&1; then
-  print_ok "Playwright Chromium ready (headless, screenshots enabled)"
+  print_ok "Playwright Chromium ready (VNC display + screenshots)"
 else
   print_warn "Run manually: python3 -m playwright install chromium"
 fi
+
+# ─── Fluxbox kiosk config ────────────────────────────────────────────────────
+print_step "Configuring Fluxbox window manager (kiosk mode)..."
+FBDIR="$HOME/.fluxbox"
+mkdir -p "$FBDIR"
+cat > "$FBDIR/init" <<'EOF'
+session.screen0.toolbar.visible: false
+session.screen0.toolbar.autoHide: true
+session.screen0.toolbar.widthPercent: 0
+session.screen0.slit.autoHide: true
+session.screen0.defaultDeco: NONE
+session.screen0.workspaces: 1
+session.screen0.window.focus.alpha: 255
+session.screen0.window.unfocus.alpha: 255
+session.screen0.tabs.usePixmap: false
+session.styleFile: /dev/null
+EOF
+cat > "$FBDIR/apps" <<'EOF'
+[app] (name=.*) (class=.*)
+  [Maximized] {yes}
+  [Deco] {NONE}
+  [Dimensions] {1280 720}
+  [Position] {0 0}
+[end]
+EOF
+print_ok "Fluxbox configured: no toolbar, no decorations, all windows maximized"
 
 # ─── E2B Sandbox check ────────────────────────────────────────────────────────
 print_step "Checking E2B cloud sandbox..."
@@ -95,6 +129,7 @@ fi
 print_step "Creating Dzeck file store directory..."
 mkdir -p /tmp/dzeck_files
 mkdir -p /tmp/dzeck_files/uploads
+mkdir -p /tmp/dzeck_chrome_profile
 print_ok "/tmp/dzeck_files ready (downloadable files stored here)"
 
 # ─── .env file ────────────────────────────────────────────────────────────────
@@ -111,16 +146,17 @@ CF_ACCOUNT_ID=
 CF_GATEWAY_NAME=
 
 # ─── Model selection ─────────────────────────────────────────────────────────
-# Model terbaik untuk tool calling (verified: llama-3.3-70b-instruct-fp8-fast)
-CF_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast
+CF_MODEL=@cf/qwen/qwen3-30b-a3b-fp8
 CF_AGENT_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast
 
 # ─── E2B Cloud Sandbox ───────────────────────────────────────────────────────
-# Untuk shell/code execution terisolasi (buatkan script, download musik, dll.)
 E2B_API_KEY=
 
+# ─── MCP Server (optional) ───────────────────────────────────────────────────
+MCP_SERVER_URL=https://mcp.cloudflare.com/mcp
+MCP_AUTH_TOKEN=
+
 # ─── Browser ─────────────────────────────────────────────────────────────────
-# Playwright headless untuk browsing web (cari info, screenshot, dll.)
 PLAYWRIGHT_ENABLED=true
 
 # ─── Server ──────────────────────────────────────────────────────────────────
@@ -135,14 +171,18 @@ fi
 
 # ─── Tool routing summary ─────────────────────────────────────────────────────
 echo ""
-echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}${BOLD}║  Routing Cerdas — Tool Dispatch Logic                    ║${NC}"
-echo -e "${CYAN}${BOLD}╠══════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}${BOLD}║  Browser/VNC  → Playwright headless (screenshot live)    ║${NC}"
-echo -e "${CYAN}${BOLD}║  Shell/Code   → E2B cloud sandbox (terisolasi, aman)     ║${NC}"
-echo -e "${CYAN}${BOLD}║  File I/O     → Local /tmp/dzeck_files                   ║${NC}"
-echo -e "${CYAN}${BOLD}║  Search       → DuckDuckGo (bebas API key)               ║${NC}"
-echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════╝${NC}"
+echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}${BOLD}║  Routing Cerdas — Tool Dispatch Logic                        ║${NC}"
+echo -e "${CYAN}${BOLD}╠══════════════════════════════════════════════════════════════╣${NC}"
+echo -e "${CYAN}${BOLD}║  Browser     → Playwright on VNC display :10 (visible LIVE)  ║${NC}"
+echo -e "${CYAN}${BOLD}║  Shell/Code  → E2B cloud sandbox (terisolasi, aman)          ║${NC}"
+echo -e "${CYAN}${BOLD}║  File I/O    → Local /tmp/dzeck_files                        ║${NC}"
+echo -e "${CYAN}${BOLD}║  Search      → DuckDuckGo (bebas API key)                    ║${NC}"
+echo -e "${CYAN}${BOLD}║  MCP         → Cloudflare MCP (OAuth token required)         ║${NC}"
+echo -e "${CYAN}${BOLD}╠══════════════════════════════════════════════════════════════╣${NC}"
+echo -e "${CYAN}${BOLD}║  VNC Stack   → Xvfb :10 → Fluxbox → x11vnc :5910 → /vnc-ws  ║${NC}"
+echo -e "${CYAN}${BOLD}║  Mobile UI   → Keyboard, Clipboard, Esc/Tab/F5 toolbar       ║${NC}"
+echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
 echo ""
@@ -154,7 +194,8 @@ echo -e "  ${BOLD}Mulai server:${NC}"
 echo -e "    ${CYAN}npm run server:dev${NC}     → http://localhost:5000"
 echo ""
 echo -e "  ${BOLD}Model AI aktif:${NC}"
-echo -e "    ${GREEN}@cf/meta/llama-3.3-70b-instruct-fp8-fast${NC}"
+echo -e "    ${GREEN}Chat: @cf/qwen/qwen3-30b-a3b-fp8${NC}"
+echo -e "    ${GREEN}Agent: @cf/meta/llama-3.3-70b-instruct-fp8-fast${NC}"
 echo -e "    ${CYAN}✓ Native tool calling verified${NC}"
 echo ""
 echo -e "  ${BOLD}Konfigurasi:${NC}"

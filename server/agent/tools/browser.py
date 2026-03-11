@@ -276,9 +276,12 @@ class PlaywrightSession:
                 "--disable-renderer-backgrounding",
                 "--window-size=1280,720",
                 "--window-position=0,0",
+                "--start-maximized",
             ]
 
-            if not display:
+            if display:
+                launch_args += ["--kiosk"]
+            else:
                 launch_args += ["--disable-gpu", "--single-process"]
 
             env = dict(os.environ)
