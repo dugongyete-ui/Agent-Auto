@@ -12,7 +12,7 @@ Implements Manus-like autonomous agent architecture with class-based tools, Plan
 | Framework | Pydantic BaseModel + async generator streaming |
 | Database | MongoDB Atlas (motor async driver) for session/agent persistence |
 | Cache | Redis (aioredis) for session state caching |
-| Browser | Playwright headless local (screenshot) + HTTP fallback |
+| Browser | Playwright non-headless on VNC display :10 (visible LIVE) + HTTP fallback |
 | Shell Sandbox | E2B Cloud Sandbox (isolated, secure execution) |
 | Architecture | DDD: Domain / Application / Infrastructure layers |
 | Session mgmt | Full session resume + rollback support |

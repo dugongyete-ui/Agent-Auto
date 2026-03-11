@@ -146,6 +146,8 @@ export async function registerRoutes(app: any): Promise<Server> {
         CF_AGENT_MODEL: agentModel,
         PYTHONPATH: process.cwd(),
         PYTHONUNBUFFERED: "1",
+        DISPLAY: process.env.DISPLAY || ":10",
+        DZECK_VNC_DISPLAY: process.env.DZECK_VNC_DISPLAY || ":10",
       },
     });
 

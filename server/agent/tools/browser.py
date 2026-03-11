@@ -785,4 +785,86 @@ class BrowserTool:
     name: str = "browser"
 
     def get_tools(self) -> list:
-        return []
+        return [
+            {"type": "function", "function": {
+                "name": "browser_navigate",
+                "description": "Buka URL di browser. Gunakan ini untuk mengakses website, halaman web, atau URL apapun. Browser akan tampil di layar VNC komputer Dzeck secara real-time.",
+                "parameters": {"type": "object", "properties": {
+                    "url": {"type": "string", "description": "URL lengkap yang akan dibuka (contoh: https://wikipedia.org)"}
+                }, "required": ["url"]},
+            }},
+            {"type": "function", "function": {
+                "name": "browser_view",
+                "description": "Lihat konten halaman browser yang sedang terbuka saat ini. Mengembalikan teks halaman, URL, judul, dan screenshot.",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            }},
+            {"type": "function", "function": {
+                "name": "browser_click",
+                "description": "Klik elemen di halaman browser. Gunakan koordinat (x, y) atau index elemen.",
+                "parameters": {"type": "object", "properties": {
+                    "coordinate_x": {"type": "number", "description": "Koordinat X pixel untuk klik"},
+                    "coordinate_y": {"type": "number", "description": "Koordinat Y pixel untuk klik"},
+                    "index": {"type": "integer", "description": "Index elemen interaktif (dari browser_view)"},
+                    "button": {"type": "string", "description": "Tombol mouse: left, right, middle", "default": "left"},
+                }, "required": []},
+            }},
+            {"type": "function", "function": {
+                "name": "browser_input",
+                "description": "Ketik teks ke field input di halaman browser.",
+                "parameters": {"type": "object", "properties": {
+                    "text": {"type": "string", "description": "Teks yang akan diketik"},
+                    "coordinate_x": {"type": "number", "description": "Koordinat X field input"},
+                    "coordinate_y": {"type": "number", "description": "Koordinat Y field input"},
+                    "index": {"type": "integer", "description": "Index elemen input (dari browser_view)"},
+                    "press_enter": {"type": "boolean", "description": "Tekan Enter setelah mengetik", "default": False},
+                }, "required": ["text"]},
+            }},
+            {"type": "function", "function": {
+                "name": "browser_press_key",
+                "description": "Tekan tombol keyboard di browser (Enter, Tab, Escape, Backspace, dll).",
+                "parameters": {"type": "object", "properties": {
+                    "key": {"type": "string", "description": "Nama tombol: Enter, Tab, Escape, Backspace, ArrowDown, dll"},
+                }, "required": ["key"]},
+            }},
+            {"type": "function", "function": {
+                "name": "browser_scroll_down",
+                "description": "Scroll ke bawah di halaman browser.",
+                "parameters": {"type": "object", "properties": {
+                    "amount": {"type": "integer", "description": "Jumlah pixel scroll (default 300)", "default": 300},
+                }, "required": []},
+            }},
+            {"type": "function", "function": {
+                "name": "browser_scroll_up",
+                "description": "Scroll ke atas di halaman browser.",
+                "parameters": {"type": "object", "properties": {
+                    "amount": {"type": "integer", "description": "Jumlah pixel scroll (default 300)", "default": 300},
+                }, "required": []},
+            }},
+            {"type": "function", "function": {
+                "name": "browser_select_option",
+                "description": "Pilih opsi dari dropdown/select di halaman browser.",
+                "parameters": {"type": "object", "properties": {
+                    "index": {"type": "integer", "description": "Index elemen select"},
+                    "option": {"type": "integer", "description": "Index opsi yang dipilih"},
+                }, "required": ["index", "option"]},
+            }},
+            {"type": "function", "function": {
+                "name": "browser_console_exec",
+                "description": "Jalankan JavaScript di console browser.",
+                "parameters": {"type": "object", "properties": {
+                    "javascript": {"type": "string", "description": "Kode JavaScript yang akan dijalankan"},
+                }, "required": ["javascript"]},
+            }},
+            {"type": "function", "function": {
+                "name": "browser_console_view",
+                "description": "Lihat log console browser (output dari console.log, error, dll).",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            }},
+            {"type": "function", "function": {
+                "name": "browser_save_image",
+                "description": "Simpan gambar dari halaman browser ke file.",
+                "parameters": {"type": "object", "properties": {
+                    "path": {"type": "string", "description": "Path file untuk menyimpan screenshot/gambar"},
+                }, "required": ["path"]},
+            }},
+        ]
