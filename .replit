@@ -7,8 +7,8 @@ packages = ["alsa-lib", "at-spi2-atk", "atk", "cairo", "cups", "dbus", "expat", 
 
 [deployment]
 deploymentTarget = "vm"
-build = ["npm", "run", "server:build"]
-run = ["npm", "run", "server:prod"]
+build = ["sh", "-c", "npm run server:build"]
+run = ["sh", "-c", "npm run server:prod"]
 
 [[ports]]
 localPort = 5000
