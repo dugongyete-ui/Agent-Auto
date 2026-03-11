@@ -454,6 +454,32 @@
     .vcd-send{padding:5px 12px;border-radius:6px;border:none;background:var(--brand);color:#fff;
       font-size:11px;cursor:pointer;font-weight:600}
 
+    /* ── Step history navigator ── */
+    #tp-history-bar{display:none;align-items:center;gap:7px;padding:5px 12px;
+      background:rgba(59,130,246,.07);border-top:1px solid rgba(59,130,246,.15);flex-shrink:0}
+    #tp-history-bar.show{display:flex}
+    #tp-history-bar-label{font-size:11px;color:var(--brand);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #tp-history-back{font-size:10px;color:var(--brand);cursor:pointer;font-weight:600;padding:2px 7px;border:1px solid rgba(59,130,246,.4);border-radius:5px;background:rgba(59,130,246,.08);white-space:nowrap}
+    #tp-history-nav{display:none;flex-direction:column;flex-shrink:0;border-top:1px solid var(--border);background:var(--surface)}
+    #tp-history-nav.show{display:flex}
+    #tp-scrubber-wrap{padding:10px 16px 4px;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:none}
+    #tp-scrubber-track{height:4px;background:var(--border2);border-radius:4px;position:relative;margin:0 6px}
+    #tp-scrubber-fill{height:100%;background:var(--brand);border-radius:4px;transition:width .12s;pointer-events:none}
+    #tp-scrubber-markers{position:absolute;inset:0;pointer-events:none}
+    #tp-scrubber-thumb{width:13px;height:13px;border-radius:50%;background:#fff;border:2.5px solid var(--brand);position:absolute;top:50%;transform:translate(-50%,-50%);transition:left .12s;box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+    .tp-scrubber-dot{width:3px;height:3px;border-radius:50%;background:var(--muted);opacity:.5;position:absolute;top:50%;transform:translate(-50%,-50%)}
+    #tp-nav-row{display:flex;align-items:center;justify-content:space-between;padding:4px 10px 10px;gap:8px}
+    .tp-nav-btn{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);
+      color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+    .tp-nav-btn:hover:not(:disabled){background:var(--surface3);border-color:var(--border2)}
+    .tp-nav-btn:disabled{opacity:.3;cursor:not-allowed;pointer-events:none}
+    .tp-nav-btn svg{width:14px;height:14px;fill:currentColor;stroke:none}
+    #tp-jump-live{display:flex;align-items:center;gap:6px;padding:7px 18px;border-radius:999px;
+      border:none;background:var(--brand);color:#fff;font-size:12px;font-weight:600;
+      cursor:pointer;transition:all .15s;white-space:nowrap;flex:1;justify-content:center;max-width:180px}
+    #tp-jump-live:hover{opacity:.9}
+    #tp-jump-live.at-live{background:var(--surface2);color:var(--muted);border:1px solid var(--border);cursor:default;opacity:1}
+    #tp-jump-live svg{width:11px;height:11px;fill:currentColor}
     #tp-footer{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;
       border-top:1px solid var(--border);flex-shrink:0;background:var(--surface);gap:8px}
     #tp-status{font-size:12px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -719,6 +745,34 @@
           <button class="vcd-send" onclick="vncSendClipboard()">Kirim</button>
         </div>
       </div>
+      <!-- History mode banner -->
+      <div id="tp-history-bar">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span id="tp-history-bar-label">Melihat riwayat</span>
+        <button id="tp-history-back" onclick="jumpToLive()">▶ Live</button>
+      </div>
+      <!-- Step history navigator -->
+      <div id="tp-history-nav">
+        <div id="tp-scrubber-wrap" onmousedown="scrubberMouseDown(event)" ontouchstart="scrubberTouchStart(event)">
+          <div id="tp-scrubber-track">
+            <div id="tp-scrubber-fill" style="width:100%"></div>
+            <div id="tp-scrubber-markers"></div>
+            <div id="tp-scrubber-thumb" style="left:100%"></div>
+          </div>
+        </div>
+        <div id="tp-nav-row">
+          <button class="tp-nav-btn" id="tp-nav-prev" onclick="navigateHistory(-1)" title="Langkah sebelumnya" disabled>
+            <svg viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20"/><rect x="5" y="4" width="2.5" height="16"/></svg>
+          </button>
+          <button id="tp-jump-live" class="at-live" onclick="jumpToLive()">
+            <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Loncat ke live
+          </button>
+          <button class="tp-nav-btn" id="tp-nav-next" onclick="navigateHistory(1)" title="Langkah berikutnya" disabled>
+            <svg viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"/><rect x="16.5" y="4" width="2.5" height="16"/></svg>
+          </button>
+        </div>
+      </div>
       <div id="tp-footer">
         <span id="tp-status">Menunggu...</span>
         <button id="takeover-btn" onclick="toggleTakeover()">
@@ -841,6 +895,15 @@ const S = {
   planPrefix: '',
   planBarOpen: false,
   started: false,
+  // Step history navigation
+  stepHistory: [],
+  historyIdx: -1,
+  _liveTermHTML: null,
+  _liveUrl: '-',
+  _lastPanelType: 'browser',
+  _lastPanelLabel: '',
+  _lastPanelArg: '',
+  _lastPanelIcon: '',
 };
 
 function newSession(firstMessage) {
@@ -1404,6 +1467,11 @@ function updatePanelTool(type, label, arg, icon) {
     browserArea.style.display = 'none';
     tpUrlbar.style.display = 'none';
   }
+  // Track last live panel state for history restore
+  S._lastPanelType = type;
+  S._lastPanelLabel = label;
+  S._lastPanelArg = arg;
+  S._lastPanelIcon = icon;
 }
 
 function updatePanelScreenshot(src, url) {
@@ -1441,6 +1509,177 @@ function togglePlanBar() {
   S.planBarOpen = !S.planBarOpen;
   document.getElementById('plan-bar-chev').className = `plan-bar-chev ${S.planBarOpen?'open':''}`;
   planMiniEl.className = `plan-steps-mini ${S.planBarOpen?'open':''}`;
+}
+
+// ═══════════════════════════════════════════════════
+// STEP HISTORY NAVIGATOR
+// ═══════════════════════════════════════════════════
+function captureStepSnapshot(stepId, stepDesc) {
+  const termEl = document.getElementById('tp-term-output');
+  const urlEl = document.getElementById('tp-url-text');
+  S.stepHistory.push({
+    idx: S.stepHistory.length,
+    stepId,
+    stepDesc: stepDesc || stepId,
+    termHTML: termEl ? termEl.innerHTML : '',
+    browserUrl: urlEl ? urlEl.textContent : '-',
+    panelType: S._lastPanelType || 'browser',
+    panelLabel: S._lastPanelLabel || '',
+    panelArg: S._lastPanelArg || '',
+    panelIcon: S._lastPanelIcon || '',
+    timestamp: new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'}),
+  });
+  S.historyIdx = -1;
+  _updateHistoryNav();
+}
+
+function _updateHistoryNav() {
+  const navEl = document.getElementById('tp-history-nav');
+  if (!navEl) return;
+  const count = S.stepHistory.length;
+  if (count === 0) { navEl.classList.remove('show'); return; }
+  navEl.classList.add('show');
+
+  const isLive = S.historyIdx === -1;
+  const curIdx = isLive ? count - 1 : S.historyIdx;
+  const pct = count <= 1 ? 100 : (curIdx / (count - 1)) * 100;
+
+  const fill = document.getElementById('tp-scrubber-fill');
+  const thumb = document.getElementById('tp-scrubber-thumb');
+  if (fill) fill.style.width = (isLive ? 100 : pct) + '%';
+  if (thumb) thumb.style.left = (isLive ? 100 : pct) + '%';
+
+  const prevBtn = document.getElementById('tp-nav-prev');
+  const nextBtn = document.getElementById('tp-nav-next');
+  const liveBtn = document.getElementById('tp-jump-live');
+  if (prevBtn) prevBtn.disabled = (curIdx <= 0);
+  if (nextBtn) nextBtn.disabled = isLive || (curIdx >= count - 1);
+  if (liveBtn) {
+    if (isLive) liveBtn.classList.add('at-live');
+    else liveBtn.classList.remove('at-live');
+  }
+
+  // Rebuild markers if count changed
+  const markersEl = document.getElementById('tp-scrubber-markers');
+  if (markersEl && markersEl.childElementCount !== count) {
+    markersEl.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+      const dot = document.createElement('div');
+      dot.className = 'tp-scrubber-dot';
+      const p = count <= 1 ? 50 : (i / (count - 1)) * 100;
+      dot.style.left = p + '%';
+      markersEl.appendChild(dot);
+    }
+  }
+}
+
+function navigateHistory(delta) {
+  const count = S.stepHistory.length;
+  if (count === 0) return;
+  const curIdx = S.historyIdx === -1 ? count - 1 : S.historyIdx;
+  const newIdx = Math.max(0, Math.min(count - 1, curIdx + delta));
+  if (delta > 0 && S.historyIdx === -1) return; // already at live
+  if (delta > 0 && newIdx >= count - 1 && S.historyIdx !== -1) { jumpToLive(); return; }
+  if (newIdx === curIdx && S.historyIdx !== -1) return;
+  if (S.historyIdx === -1) _saveLiveState();
+  S.historyIdx = newIdx;
+  _renderHistoryFrame(S.stepHistory[newIdx]);
+  _updateHistoryNav();
+}
+
+function jumpToLive() {
+  if (S.historyIdx === -1) return;
+  S.historyIdx = -1;
+  const termEl = document.getElementById('tp-term-output');
+  const urlEl = document.getElementById('tp-url-text');
+  if (termEl && S._liveTermHTML !== null) termEl.innerHTML = S._liveTermHTML;
+  if (urlEl) urlEl.textContent = S._liveUrl || '-';
+  // Restore panel to live panel type
+  _applyPanelType(S._lastPanelType);
+  // Restore tool info
+  const tpFn = document.getElementById('tp-tool-fn');
+  const tpArg = document.getElementById('tp-tool-arg');
+  const tpIcon = document.getElementById('tp-tool-icon');
+  if (tpFn) tpFn.textContent = S._lastPanelLabel;
+  if (tpArg) tpArg.textContent = S._lastPanelArg;
+  if (tpIcon) tpIcon.innerHTML = S._lastPanelIcon;
+  document.getElementById('tp-history-bar')?.classList.remove('show');
+  _updateHistoryNav();
+}
+
+function _saveLiveState() {
+  const termEl = document.getElementById('tp-term-output');
+  const urlEl = document.getElementById('tp-url-text');
+  S._liveTermHTML = termEl ? termEl.innerHTML : '';
+  S._liveUrl = urlEl ? urlEl.textContent : '-';
+}
+
+function _applyPanelType(type) {
+  const termArea = document.getElementById('tp-terminal-area');
+  const browserArea = document.getElementById('tp-browser-area');
+  const tpUrlbarEl = document.getElementById('tp-urlbar');
+  if (type === 'browser') {
+    if (termArea) termArea.classList.remove('active');
+    if (browserArea) browserArea.style.display = '';
+    if (tpUrlbarEl) tpUrlbarEl.style.display = 'flex';
+  } else {
+    if (termArea) termArea.classList.add('active');
+    if (browserArea) browserArea.style.display = 'none';
+    if (tpUrlbarEl) tpUrlbarEl.style.display = 'none';
+  }
+}
+
+function _renderHistoryFrame(snap) {
+  if (!snap) return;
+  const termEl = document.getElementById('tp-term-output');
+  const urlEl = document.getElementById('tp-url-text');
+  if (termEl) termEl.innerHTML = snap.termHTML || '<span style="color:var(--muted);font-size:11px">Tidak ada output terminal</span>';
+  if (urlEl) urlEl.textContent = snap.browserUrl || '-';
+  _applyPanelType(snap.panelType);
+  const tpFn = document.getElementById('tp-tool-fn');
+  const tpArg = document.getElementById('tp-tool-arg');
+  const tpIcon = document.getElementById('tp-tool-icon');
+  if (tpFn) tpFn.textContent = snap.panelLabel || 'Langkah ' + (snap.idx + 1);
+  if (tpArg) tpArg.textContent = snap.panelArg || '';
+  if (tpIcon) tpIcon.innerHTML = snap.panelIcon || '';
+  const histBar = document.getElementById('tp-history-bar');
+  const histLabel = document.getElementById('tp-history-bar-label');
+  if (histBar) histBar.classList.add('show');
+  if (histLabel) histLabel.textContent = `Langkah ${snap.idx + 1}/${S.stepHistory.length}: ${snap.stepDesc}`;
+  if (snap.panelType !== 'browser') showToolPanel(true);
+}
+
+// Scrubber drag
+let _scrubDragging = false;
+function scrubberMouseDown(e) {
+  _scrubDragging = true;
+  _scrubberSeek(e.clientX);
+  const move = (e2) => { if (_scrubDragging) _scrubberSeek(e2.clientX); };
+  const up = () => { _scrubDragging = false; document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+function scrubberTouchStart(e) {
+  e.preventDefault();
+  _scrubberSeek(e.touches[0].clientX);
+  const move = (e2) => _scrubberSeek(e2.touches[0].clientX);
+  const up = () => { document.removeEventListener('touchmove', move); document.removeEventListener('touchend', up); };
+  document.addEventListener('touchmove', move, {passive:false});
+  document.addEventListener('touchend', up);
+}
+function _scrubberSeek(clientX) {
+  const track = document.getElementById('tp-scrubber-track');
+  if (!track) return;
+  const rect = track.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  const count = S.stepHistory.length;
+  if (count === 0) return;
+  if (pct >= 0.95) { jumpToLive(); return; }
+  const targetIdx = Math.round(pct * (count - 1));
+  if (S.historyIdx === -1) _saveLiveState();
+  S.historyIdx = targetIdx;
+  _renderHistoryFrame(S.stepHistory[targetIdx]);
+  _updateHistoryNav();
 }
 
 // ═══════════════════════════════════════════════════
@@ -1904,7 +2143,10 @@ function handleEvent(evt) {
       }
       const s = step.status||'';
       if (s==='running') { updateStepStatus(domId,'running'); openStep(domId); updatePlanMini(step.id,'running'); }
-      else if (s==='completed'||s==='failed') { updateStepStatus(domId,s); updatePlanMini(step.id,s); updatePlanBarCount(); }
+      else if (s==='completed'||s==='failed') {
+        updateStepStatus(domId,s); updatePlanMini(step.id,s); updatePlanBarCount();
+        captureStepSnapshot(domId, step.description || '');
+      }
       break;
     }
 
@@ -2127,6 +2369,9 @@ async function doSend(text, attachments) {
 
   S.plan=null; S.stepEls={}; S.toolEls={}; S.toolsByStep={}; S.currentStepId=null;
   S.planPrefix = '';
+  S.stepHistory=[]; S.historyIdx=-1; S._liveTermHTML=null; S._liveUrl='-';
+  document.getElementById('tp-history-nav')?.classList.remove('show');
+  document.getElementById('tp-history-bar')?.classList.remove('show');
   planBarEl.classList.remove('visible');
   planMiniEl.innerHTML = '';
   tpToolInfo.style.display='none'; tpStatus.textContent='Memproses...';

@@ -1362,25 +1362,21 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
             return text
 
         try:
-            loop = asyncio.get_event_loop()
-            full_text = await loop.run_in_executor(
-                None, lambda: call_cf_streaming(messages)
-            )
-
-            if not full_text:
-                full_text = "Task completed successfully."
-
-            cleaned = _strip_json_wrapper(full_text)
-
             yield make_event("message_start", role="assistant")
-            chunk_size = 12
-            for i in range(0, len(cleaned), chunk_size):
-                yield make_event("message_chunk", chunk=cleaned[i:i + chunk_size], role="assistant")
-                await asyncio.sleep(0.01)
+            got_any = False
+            full_text_buf = ""
+            async for chunk in call_cf_streaming_realtime(messages):
+                if chunk:
+                    cleaned_chunk = _strip_json_wrapper(chunk) if chunk.strip().startswith("{") else chunk
+                    got_any = True
+                    full_text_buf += cleaned_chunk
+                    yield make_event("message_chunk", chunk=cleaned_chunk, role="assistant")
+            if not got_any:
+                yield make_event("message_chunk", chunk="Task selesai.", role="assistant")
             yield make_event("message_end", role="assistant")
         except Exception:
             yield make_event("message_start", role="assistant")
-            yield make_event("message_chunk", chunk="Task completed.", role="assistant")
+            yield make_event("message_chunk", chunk="Task selesai.", role="assistant")
             yield make_event("message_end", role="assistant")
 
     async def respond_directly_async(
