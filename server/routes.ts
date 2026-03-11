@@ -417,7 +417,6 @@ export async function registerRoutes(app: any): Promise<Server> {
       // Use known nix store paths as fallbacks (from environment introspection)
       const xvfb = findBin("Xvfb", "/nix/store/8jlz3l9kf9w7zq263vy3ms5c90hy96r4-xorg-server-21.1.13/bin/Xvfb");
       const x11vnc = findBin("x11vnc", "/nix/store/x15ycm43gka3mkj8lxy14mv8iazxk60s-x11vnc-0.9.16/bin/x11vnc");
-      const xsetroot = findBin("xsetroot", "");
 
       console.log(`[VNC] Binaries: Xvfb=${xvfb} x11vnc=${x11vnc}`);
 
@@ -449,12 +448,14 @@ export async function registerRoutes(app: any): Promise<Server> {
       }
 
       // 2. Draw solid background so display isn't black
+      const xsetroot = findBin("xsetroot", "");
       if (xsetroot) {
         try {
-          spawnProc(xsetroot, ["-solid", "#0e0e14"], {
+          spawnProc(xsetroot, ["-solid", "#1a1a2e"], {
             detached: false, stdio: "ignore",
             env: { ...process.env, DISPLAY: VNC_DISPLAY },
           });
+          console.log("[VNC] Background set via xsetroot");
         } catch {}
       }
 
@@ -479,21 +480,69 @@ export async function registerRoutes(app: any): Promise<Server> {
       process.env.DISPLAY = VNC_DISPLAY;
       process.env.DZECK_VNC_DISPLAY = VNC_DISPLAY;
 
-      // 5. Launch Chromium on the virtual display so it's not blank
-      try {
-        const chromiumPath = findBin("chromium", "") || findBin("chromium-browser", "") || findBin("google-chrome", "");
-        if (chromiumPath) {
-          spawnProc(chromiumPath, [
+      // 5. Start a lightweight window manager (fluxbox) so browser windows render properly
+      const fluxbox = findBin("fluxbox", "");
+      if (fluxbox) {
+        try {
+          const fbProc = spawnProc(fluxbox, [], {
+            detached: false, stdio: "ignore",
+            env: { ...process.env, DISPLAY: VNC_DISPLAY },
+          });
+          _vncProcs.push(fbProc);
+          await new Promise(r => setTimeout(r, 1000));
+          console.log("[VNC] Fluxbox window manager started");
+        } catch {}
+      }
+
+      // 6. Launch Chromium on the virtual display so it's not blank
+      // Priority: Playwright bundled chromium > system chromium
+      let chromiumPath = "";
+
+      // Check Playwright cache first (most reliable)
+      const pwCachePatterns = [
+        "/home/runner/workspace/.cache/ms-playwright/chromium-*/chrome-linux64/chrome",
+        "/home/runner/workspace/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
+        "/home/runner/.cache/ms-playwright/chromium-*/chrome-linux64/chrome",
+        "/home/runner/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
+      ];
+      for (const pattern of pwCachePatterns) {
+        try {
+          const found = execSync(
+            `ls ${pattern} 2>/dev/null | tail -1`,
+            { encoding: "utf-8", timeout: 3000 }
+          ).trim();
+          if (found && fs.existsSync(found)) {
+            chromiumPath = found;
+            break;
+          }
+        } catch {}
+      }
+
+      // Fallback to system chromium
+      if (!chromiumPath) {
+        chromiumPath = findBin("chromium", "") || findBin("chromium-browser", "") || findBin("google-chrome", "");
+      }
+
+      if (chromiumPath) {
+        try {
+          const chromeProc = spawnProc(chromiumPath, [
             "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
+            "--disable-software-rasterizer", "--disable-setuid-sandbox",
+            "--no-zygote", "--disable-extensions",
             "--window-size=1280,720", "--start-maximized",
-            "about:blank",
+            "https://www.google.com",
           ], {
             detached: false, stdio: "ignore",
             env: { ...process.env, DISPLAY: VNC_DISPLAY },
           });
-          console.log("[VNC] Chromium launched on display");
+          _vncProcs.push(chromeProc);
+          console.log(`[VNC] Chromium launched on display from: ${chromiumPath}`);
+        } catch (e: any) {
+          console.warn("[VNC] Chromium launch error:", e.message);
         }
-      } catch {}
+      } else {
+        console.warn("[VNC] No Chromium binary found — VNC display will show background only");
+      }
 
       _vncStarted = true;
       _vncStarting = false;

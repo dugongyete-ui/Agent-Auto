@@ -3,7 +3,7 @@ modules = ["nodejs-22", "python-3.11"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["alsa-lib", "at-spi2-atk", "atk", "cairo", "cups", "dbus", "expat", "gitFull", "glib", "libxcrypt", "libxkbcommon", "mesa", "nspr", "nss", "pango", "playwright-driver", "x11vnc", "xorg.libX11", "xorg.libXScrnSaver", "xorg.libXcomposite", "xorg.libXcursor", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXi", "xorg.libXinerama", "xorg.libXrandr", "xorg.libXtst", "xorg.libxcb", "xorg.xorgserver"]
+packages = ["alsa-lib", "at-spi2-atk", "atk", "cairo", "cups", "dbus", "expat", "gitFull", "glib", "libxcrypt", "libxkbcommon", "mesa", "nspr", "nss", "pango", "playwright-driver", "x11vnc", "xorg.libX11", "xorg.libXScrnSaver", "xorg.libXcomposite", "xorg.libXcursor", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXi", "xorg.libXinerama", "xorg.libXrandr", "xorg.libXtst", "xorg.libxcb", "xorg.xorgserver", "xorg.xsetroot", "xorg.xdpyinfo", "fluxbox", "feh"]
 
 [deployment]
 deploymentTarget = "cloudrun"

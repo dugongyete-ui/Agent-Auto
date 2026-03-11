@@ -28,24 +28,19 @@ def _find_chromium_executable() -> Optional[str]:
     import glob as _glob
     import subprocess as _sp
 
-    candidates = [
-        "/home/runner/workspace/.cache/ms-playwright/chromium-1091/chrome-linux/chrome",
-        "/home/runner/.cache/ms-playwright/chromium-1091/chrome-linux/chrome",
-    ]
-    # Playwright cache — any version in workspace or home
+    candidates = []
     for pattern in [
-        "/home/runner/workspace/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
-        "/home/runner/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
         "/home/runner/workspace/.cache/ms-playwright/chromium-*/chrome-linux64/chrome",
+        "/home/runner/workspace/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
         "/home/runner/.cache/ms-playwright/chromium-*/chrome-linux64/chrome",
+        "/home/runner/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
     ]:
-        found = sorted(_glob.glob(pattern))
-        if found:
-            candidates = found + candidates
+        found = sorted(_glob.glob(pattern), reverse=True)
+        candidates.extend(found)
 
-    for path in candidates:
-        if os.path.isfile(path) and os.access(path, os.X_OK):
-            return path
+    for p in candidates:
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
 
     # Try PATH
     for name in ("chromium", "chromium-browser", "google-chrome"):
