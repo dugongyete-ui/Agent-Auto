@@ -448,9 +448,27 @@ export async function registerRoutes(app: any): Promise<Server> {
   async function ensureVncRunning(): Promise<boolean> {
     if (_vncStarted) {
       const allAlive = _vncProcs.every((p: any) => p.exitCode === null);
-      if (allAlive) return true;
-      _vncStarted = false;
-      _vncProcs.length = 0;
+      const chromiumAlive = _chromiumProc && _chromiumProc.exitCode === null;
+      if (allAlive && chromiumAlive) {
+        try {
+          const http = require("node:http");
+          await new Promise<void>((resolve, reject) => {
+            const req = http.get(`http://127.0.0.1:${CDP_PORT}/json/version`, { timeout: 3000 }, (res: any) => {
+              res.resume();
+              res.on("end", () => resolve());
+            });
+            req.on("error", () => reject(new Error("CDP probe failed")));
+            req.on("timeout", () => { req.destroy(); reject(new Error("CDP probe timeout")); });
+          });
+          return true;
+        } catch {
+          console.log("[VNC] CDP health probe failed — Chromium hung, restarting...");
+          stopVnc();
+        }
+      } else {
+        console.log(`[VNC] Detected dead processes (vnc=${allAlive}, chromium=${chromiumAlive}), restarting...`);
+        stopVnc();
+      }
     }
     if (_vncStarting && _vncStartPromise) {
       return _vncStartPromise;
@@ -578,6 +596,9 @@ export async function registerRoutes(app: any): Promise<Server> {
             "session.screen0.window.focus.alpha: 255",
             "session.screen0.window.unfocus.alpha: 255",
             "session.screen0.tabs.usePixmap: false",
+            "session.screen0.focusModel: MouseFocus",
+            "session.screen0.autoRaise: true",
+            "session.screen0.clickRaises: true",
             "session.styleFile: /dev/null",
           ].join("\n") + "\n");
 
@@ -642,7 +663,7 @@ export async function registerRoutes(app: any): Promise<Server> {
             "--autoplay-policy=no-user-gesture-required",
             "--password-store=basic", "--use-mock-keychain",
             "--window-size=1280,720", "--window-position=0,0",
-            "--start-maximized",
+            "--start-maximized", "--kiosk",
             `--remote-debugging-port=${CDP_PORT}`,
             "--remote-debugging-address=127.0.0.1",
             `--user-data-dir=/tmp/dzeck-chrome-data-${Date.now()}`,

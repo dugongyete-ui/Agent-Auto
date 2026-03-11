@@ -258,129 +258,84 @@ class PlaywrightSession:
         self.current_url: Optional[str] = None
         self.console_logs: List[str] = []
 
+    def _request_vnc_restart(self) -> bool:
+        """Ask the Node.js server to restart VNC+Chromium via HTTP API."""
+        try:
+            import urllib.request
+            req = urllib.request.Request("http://127.0.0.1:5000/api/vnc/start", method="POST",
+                                         data=b'{}', headers={"Content-Type": "application/json"})
+            resp = urllib.request.urlopen(req, timeout=30)
+            return resp.status == 200
+        except Exception as e:
+            logger.warning("[Browser] VNC restart request failed: %s", e)
+            return False
+
+    def _wait_for_cdp(self, cdp_url: str, timeout: int = 20) -> bool:
+        """Wait for CDP endpoint to become responsive."""
+        import time as _time
+        import urllib.request as _req
+        for i in range(timeout):
+            try:
+                _req.urlopen(cdp_url + "/json/version", timeout=2)
+                return True
+            except Exception:
+                _time.sleep(1)
+        return False
+
+    def _connect_cdp(self, cdp_url: str) -> bool:
+        """Connect to existing Chromium via CDP. Returns True on success."""
+        try:
+            self._browser = self._pw.chromium.connect_over_cdp(cdp_url)
+            self._cdp_mode = True
+            contexts = self._browser.contexts
+            if contexts:
+                self._context = contexts[0]
+                pages = self._context.pages
+                if pages:
+                    self._page = pages[0]
+                else:
+                    self._page = self._context.new_page()
+            else:
+                self._context = self._browser.new_context(
+                    viewport={"width": 1280, "height": 720},
+                    user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                )
+                self._page = self._context.new_page()
+            self._page.on("console", lambda msg: self.console_logs.append("[{}] {}".format(msg.type, msg.text)))
+            self._started = True
+            self._headless = False
+            logger.info("[Browser] Connected to persistent Chromium via CDP (VNC visible).")
+            return True
+        except Exception as e:
+            logger.warning("[Browser] CDP connect failed: %s", e)
+            return False
+
     def start(self) -> bool:
         if not _playwright_available:
             return False
         try:
             from playwright.sync_api import sync_playwright
-            import time as _time
 
-            cdp_url = os.environ.get("DZECK_CDP_URL", "")
-
-            if not cdp_url:
-                logger.info("[Browser] No CDP URL yet — waiting up to 15s for VNC/Chromium to start...")
-                for _wait_i in range(15):
-                    _time.sleep(1)
-                    cdp_url = os.environ.get("DZECK_CDP_URL", "")
-                    if cdp_url:
-                        logger.info("[Browser] CDP URL appeared: %s", cdp_url)
-                        break
-                    try:
-                        import urllib.request
-                        urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=2)
-                        cdp_url = "http://127.0.0.1:9222"
-                        logger.info("[Browser] Detected CDP at port 9222 (env not set)")
-                        break
-                    except Exception:
-                        pass
-
-            display = os.environ.get("DISPLAY", "") or os.environ.get("DZECK_VNC_DISPLAY", "")
+            cdp_url = os.environ.get("DZECK_CDP_URL", "") or "http://127.0.0.1:9222"
 
             self._pw = sync_playwright().start()
 
-            if cdp_url:
-                logger.info("[Browser] Connecting to persistent Chromium via CDP: %s", cdp_url)
-                try:
-                    try:
-                        import urllib.request
-                        urllib.request.urlopen(cdp_url + "/json/version", timeout=3)
-                    except Exception:
-                        logger.warning("[Browser] CDP endpoint not responding, waiting 5s...")
-                        _time.sleep(5)
-                    self._browser = self._pw.chromium.connect_over_cdp(cdp_url)
-                    self._cdp_mode = True
-                    contexts = self._browser.contexts
-                    if contexts:
-                        self._context = contexts[0]
-                        pages = self._context.pages
-                        if pages:
-                            self._page = pages[0]
-                        else:
-                            self._page = self._context.new_page()
-                    else:
-                        self._context = self._browser.new_context(
-                            viewport={"width": 1280, "height": 720},
-                            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                        )
-                        self._page = self._context.new_page()
-                    self._page.on("console", lambda msg: self.console_logs.append("[{}] {}".format(msg.type, msg.text)))
-                    self._started = True
-                    self._headless = False
-                    logger.info("[Browser] Connected to persistent Chromium via CDP (VNC visible).")
+            if self._wait_for_cdp(cdp_url, timeout=5):
+                logger.info("[Browser] CDP endpoint responsive at %s", cdp_url)
+                if self._connect_cdp(cdp_url):
                     return True
-                except Exception as cdp_err:
-                    logger.warning("[Browser] CDP connection failed: %s — falling back to launch", cdp_err)
 
-            if display:
-                self._headless = False
-                logger.info("[Browser] Using VNC display %s (non-headless).", display)
-            else:
-                self._headless = True
-                logger.info("[Browser] No DISPLAY found, using headless mode.")
+            logger.info("[Browser] CDP not available — requesting VNC/Chromium restart...")
+            self._request_vnc_restart()
 
-            launch_args = [
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-setuid-sandbox",
-                "--disable-gpu", "--disable-software-rasterizer",
-                "--disable-extensions",
-                "--disable-background-timer-throttling",
-                "--disable-backgrounding-occluded-windows",
-                "--disable-renderer-backgrounding",
-                "--no-first-run", "--no-default-browser-check",
-                "--disable-sync", "--disable-default-apps",
-                "--disable-infobars", "--disable-popup-blocking",
-                "--disable-translate", "--disable-notifications",
-                "--disable-component-update",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-features=TranslateUI,InfiniteSessionRestore,MediaRouter",
-                "--autoplay-policy=no-user-gesture-required",
-                "--password-store=basic", "--use-mock-keychain",
-                "--window-size=1280,720",
-                "--window-position=0,0",
-                "--start-maximized",
-            ]
+            if self._wait_for_cdp(cdp_url, timeout=25):
+                logger.info("[Browser] CDP available after restart at %s", cdp_url)
+                if self._connect_cdp(cdp_url):
+                    return True
 
-            if not display:
-                launch_args += ["--single-process"]
-
-            env = dict(os.environ)
-            if display:
-                env["DISPLAY"] = display
-
-            exe = _find_chromium_executable()
-            launch_kwargs: dict = {
-                "headless": self._headless,
-                "args": launch_args,
-            }
-            if exe:
-                launch_kwargs["executable_path"] = exe
-                logger.info("[Browser] Chromium executable: %s", exe)
-            if not self._headless:
-                launch_kwargs["env"] = env
-
-            self._browser = self._pw.chromium.launch(**launch_kwargs)
-            self._cdp_mode = False
-            self._context = self._browser.new_context(
-                viewport={"width": 1280, "height": 720},
-                user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            )
-            self._page = self._context.new_page()
-            self._page.on("console", lambda msg: self.console_logs.append("[{}] {}".format(msg.type, msg.text)))
-            self._started = True
-            mode = "VNC non-headless" if not self._headless else "headless"
-            logger.info("[Browser] Playwright started (%s).", mode)
-            return True
+            logger.error("[Browser] CDP still unavailable after restart — browser tools will not work")
+            self._started = False
+            return False
         except Exception as e:
             logger.error("[Browser] Failed to start Playwright: %s", e)
             self._started = False
@@ -516,7 +471,12 @@ class PlaywrightSession:
 
     def disconnect(self) -> None:
         """Disconnect from CDP browser without killing it.
-        Browser stays visible on VNC. For non-CDP mode, just drops references."""
+        Browser stays visible on VNC — page content persists."""
+        try:
+            if self._browser and self._cdp_mode:
+                self._browser.close()
+        except Exception:
+            pass
         try:
             if self._pw:
                 self._pw.stop()
@@ -529,17 +489,7 @@ class PlaywrightSession:
         self._started = False
 
     def close(self) -> None:
-        if getattr(self, '_cdp_mode', False):
-            self.disconnect()
-        else:
-            try:
-                if self._browser:
-                    self._browser.close()
-                if self._pw:
-                    self._pw.stop()
-            except Exception:
-                pass
-            self._started = False
+        self.disconnect()
 
 
 # ─── HTTP Fallback Session ─────────────────────────────────────────────────────
