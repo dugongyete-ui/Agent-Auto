@@ -22,11 +22,22 @@ Implements Manus-like autonomous agent architecture with class-based tools, Plan
 ## VNC Architecture
 
 - **Xvfb** virtual display on `:10`, screen `1280x720x24`
+- **Fluxbox** lightweight window manager for proper window rendering
+- **xsetroot** sets solid background color (`#1a1a2e`) so display is not black
+- **Chromium** (Playwright's bundled chromium-1208) launched on the virtual display on boot
 - **x11vnc** VNC server on port `5910` (NOT 5900 — avoids system conflicts)
 - **Native WS→TCP proxy** in Node.js `routes.ts`: browser connects to `/vnc-ws` WebSocket → proxied directly to TCP port 5910 (no websockify needed)
 - **Stale lock cleanup** on each server restart: removes `/tmp/.X10-lock` and `/tmp/.X11-unix/X10` before starting Xvfb
-- **noVNC** client loaded from CDN in `server/templates/vnc-view.html`
+- **noVNC** client loaded from CDN in `server/templates/vnc-view.html` and `server/templates/web-chat.html`
 - DISPLAY env var set to `:10` for all spawned subprocesses (Playwright)
+- **Nix packages**: `xorg.xsetroot`, `xorg.xdpyinfo`, `fluxbox`, `feh` added for VNC display management
+
+## MCP Configuration
+
+- **MCP_SERVER_URL**: `https://mcp.cloudflare.com/mcp` (Cloudflare MCP server)
+- **MCP_AUTH_TOKEN**: Required for Cloudflare MCP OAuth authentication (separate from CF_API_KEY)
+- Auth priority: `MCP_AUTH_TOKEN` > `CF_API_KEY` for MCP requests
+- Tools: `mcp_list_tools` (discover available tools), `mcp_call_tool` (execute MCP tool)
 
 ## Key Features
 

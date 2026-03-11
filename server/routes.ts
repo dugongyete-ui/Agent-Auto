@@ -390,6 +390,10 @@ export async function registerRoutes(app: any): Promise<Server> {
   const VNC_DISPLAY = ":10";
   const VNC_PORT_NUM = 5910;
 
+  // Set DISPLAY early so agent/browser requests never start headless
+  process.env.DISPLAY = VNC_DISPLAY;
+  process.env.DZECK_VNC_DISPLAY = VNC_DISPLAY;
+
   async function ensureVncRunning(): Promise<boolean> {
     if (_vncStarted) {
       const allAlive = _vncProcs.every((p: any) => p.exitCode === null);

@@ -21,13 +21,12 @@ from server.agent.tools.base import BaseTool, tool
 logger = logging.getLogger(__name__)
 
 MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "")
+MCP_AUTH_TOKEN = os.environ.get("MCP_AUTH_TOKEN", "")
 CF_API_KEY = os.environ.get("CF_API_KEY", "")
 
 
 def _make_ssl_ctx() -> ssl.SSLContext:
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
 
@@ -58,6 +57,16 @@ class MCPClientManager:
         with self._lock:
             return list(self._registered_tools.values())
 
+    @staticmethod
+    def _get_auth_token(server_url: str) -> str:
+        """Get the appropriate auth token for a given MCP server URL.
+        Only uses CF_API_KEY for trusted Cloudflare domains to prevent credential leaks."""
+        if MCP_AUTH_TOKEN:
+            return MCP_AUTH_TOKEN
+        if CF_API_KEY and "cloudflare.com" in server_url:
+            return CF_API_KEY
+        return ""
+
     def _call_http_mcp(self, server_url: str, tool_name: str, arguments: Dict[str, Any]) -> ToolResult:
         """Call an HTTP/SSE MCP server endpoint."""
         body = json.dumps({
@@ -72,8 +81,9 @@ class MCPClientManager:
             "Accept": "application/json, text/event-stream",
             "User-Agent": "DzeckAI/2.0",
         }
-        if CF_API_KEY:
-            headers["Authorization"] = f"Bearer {CF_API_KEY}"
+        auth_token = self._get_auth_token(server_url)
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
 
         req = urllib.request.Request(server_url, data=body, headers=headers, method="POST")
         try:
@@ -113,8 +123,9 @@ class MCPClientManager:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        if CF_API_KEY:
-            headers["Authorization"] = f"Bearer {CF_API_KEY}"
+        auth_token = self._get_auth_token(server_url)
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
 
         req = urllib.request.Request(server_url, data=body, headers=headers, method="POST")
         try:
@@ -147,11 +158,12 @@ class MCPClientManager:
             return self._call_http_mcp(MCP_SERVER_URL, tool_name, arguments)
 
         return ToolResult(
-            success=True,
+            success=False,
             message=(
                 "MCP tool '{}' tidak dapat dijalankan: belum ada MCP server yang dikonfigurasi. "
                 "Set environment variable MCP_SERVER_URL untuk mengaktifkan MCP tools eksternal. "
-                "Contoh: MCP_SERVER_URL=https://your-mcp-server.com/mcp".format(tool_name)
+                "Jika menggunakan Cloudflare MCP (https://mcp.cloudflare.com/mcp), "
+                "set juga MCP_AUTH_TOKEN dengan OAuth token dari dashboard Cloudflare.".format(tool_name)
             ),
             data={"tool_name": tool_name, "arguments": arguments, "configured": False},
         )
