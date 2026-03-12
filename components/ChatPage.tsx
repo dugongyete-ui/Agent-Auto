@@ -46,6 +46,7 @@ export function ChatPage({
 }: ChatPageProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isWaitingForUser, setIsWaitingForUser] = useState(false);
   const [inputMessage, setInputMessage] = useState("");
   const [title, setTitle] = useState("New Chat");
   const [attachments] = useState<ChatAttachment[]>([]);
@@ -54,9 +55,11 @@ export function ChatPage({
   const [thinking, setThinking] = useState<ThinkingState>({ active: false, label: "" });
   const [tools, setTools] = useState<ToolItem[]>([]);
   const [streamingContent, setStreamingContent] = useState<string>("");
+  const [stepHistory, setStepHistory] = useState<string[]>([]);
 
   const flatListRef = useRef<FlatList>(null);
   const cancelRef = useRef<(() => void) | null>(null);
+  const isWaitingRef = useRef(false);
   const streamingMsgIdRef = useRef<string | null>(null);
   const toolsRef = useRef<ToolItem[]>([]);
   const planMsgIdRef = useRef<string | null>(null);
@@ -136,6 +139,10 @@ export function ChatPage({
       }
 
       if (status === "running" && step?.description) {
+        setStepHistory(prev => {
+          if (prev.length > 0 && prev[prev.length - 1] === step.description) return prev;
+          return [...prev, step.description];
+        });
         setThinking({ active: true, label: step.description, stepLabel: step.description });
       } else if (status === "completed" || status === "failed") {
         setThinking({ active: true, label: "Menyelesaikan langkah..." });
@@ -220,14 +227,26 @@ export function ChatPage({
       return;
     }
 
+    if (type === "waiting_for_user") {
+      isWaitingRef.current = true;
+      setIsWaitingForUser(true);
+      setThinking({ active: false, label: "" });
+      return;
+    }
+
     if (type === "message_start") {
+      const role = event.role === "ask" ? "ask" as const : "assistant" as const;
       const newId = `msg_${Date.now()}_stream`;
       streamingMsgIdRef.current = newId;
       setStreamingContent("");
-      setThinking({ active: false, label: "" });
+      if (role === "ask") {
+        setThinking({ active: true, label: "AI mengajukan pertanyaan..." });
+      } else {
+        setThinking({ active: false, label: "" });
+      }
       const msg: ChatMessage = {
         id: newId,
-        role: "assistant",
+        role,
         content: "",
         timestamp: Date.now(),
         isStreaming: true,
@@ -251,6 +270,7 @@ export function ChatPage({
 
     if (type === "message_end") {
       if (streamingMsgIdRef.current) {
+        const isAskEnd = event.role === "ask";
         setMessages(prev => prev.map(m =>
           m.id === streamingMsgIdRef.current
             ? { ...m, isStreaming: false }
@@ -258,6 +278,9 @@ export function ChatPage({
         ));
         streamingMsgIdRef.current = null;
         setStreamingContent("");
+        if (isAskEnd) {
+          setThinking({ active: false, label: "" });
+        }
       }
       return;
     }
@@ -336,7 +359,13 @@ export function ChatPage({
   }, []);
 
   const handleSubmit = useCallback(async () => {
-    if (!inputMessage.trim() || isLoading) return;
+    if (!inputMessage.trim()) return;
+    if (isLoading && !isWaitingForUser) return;
+
+    if (isWaitingForUser && cancelRef.current) {
+      cancelRef.current();
+      cancelRef.current = null;
+    }
 
     const userMsg: ChatMessage = {
       id: `msg_${Date.now()}`,
@@ -350,8 +379,10 @@ export function ChatPage({
     const msgText = inputMessage.trim();
     setInputMessage("");
     setIsLoading(true);
+    isWaitingRef.current = false;
+    setIsWaitingForUser(false);
     setTools([]);
-    // Reset plan tracking for new request
+    setStepHistory([]);
     planMsgIdRef.current = null;
     currentPlanRef.current = null;
     setThinking({ active: true, label: isAgentMode ? "Dzeck sedang berpikir..." : "Memikirkan jawaban..." });
@@ -359,7 +390,7 @@ export function ChatPage({
     try {
       if (isAgentMode) {
         const historyMsgs = messages.map(m => ({
-          role: m.role,
+          role: m.role === "ask" ? "assistant" as const : m.role,
           content: m.content,
         }));
 
@@ -387,7 +418,10 @@ export function ChatPage({
             },
             onDone: () => {
               setThinking({ active: false, label: "" });
-              setIsLoading(false);
+              if (!isWaitingRef.current) {
+                setIsLoading(false);
+                setStepHistory([]);
+              }
               cancelRef.current = null;
             },
           }
@@ -396,10 +430,10 @@ export function ChatPage({
         cancelRef.current = cancel;
       } else {
         const historyMsgs = messages.map(m => ({
-          role: m.role,
+          role: m.role === "ask" ? "assistant" as const : m.role,
           content: m.content,
         }));
-        historyMsgs.push({ role: "user", content: msgText });
+        historyMsgs.push({ role: "user" as const, content: msgText });
 
         const response = await apiService.chat({ messages: historyMsgs });
         setThinking({ active: false, label: "" });
@@ -426,7 +460,7 @@ export function ChatPage({
       }]);
       setIsLoading(false);
     }
-  }, [inputMessage, messages, isAgentMode, attachments, isLoading, handleEvent]);
+  }, [inputMessage, messages, isAgentMode, attachments, isLoading, isWaitingForUser, handleEvent]);
 
   const handleStop = useCallback(() => {
     if (cancelRef.current) {
@@ -435,6 +469,9 @@ export function ChatPage({
     }
     setThinking({ active: false, label: "" });
     setIsLoading(false);
+    isWaitingRef.current = false;
+    setIsWaitingForUser(false);
+    setStepHistory([]);
   }, []);
 
   const renderMessage = useCallback(({ item }: { item: ChatMessage }) => {
@@ -470,7 +507,23 @@ export function ChatPage({
           <Ionicons name="sparkles" size={12} color="#FFFFFF" />
         </View>
         <View style={styles.thinkingBubble}>
-          <AgentWorking label={thinking.label || "Memproses..."} />
+          {stepHistory.length >= 1 ? (
+            <View>
+              {stepHistory.map((step, i) => (
+                <Text
+                  key={i}
+                  style={[
+                    styles.stepHistoryItem,
+                    i === stepHistory.length - 1 && styles.stepHistoryItemActive,
+                  ]}
+                >
+                  {i === stepHistory.length - 1 ? "▶ " : "✓ "}{step}
+                </Text>
+              ))}
+            </View>
+          ) : (
+            <AgentWorking label={thinking.label || "Memproses..."} />
+          )}
         </View>
       </View>
     );
@@ -538,6 +591,7 @@ export function ChatPage({
         onStop={handleStop}
         isLoading={isLoading}
         isAgentMode={isAgentMode}
+        isWaitingForUser={isWaitingForUser}
         attachments={attachments}
       />
     </View>
@@ -674,5 +728,14 @@ const styles = StyleSheet.create({
   planCardWrapper: {
     paddingHorizontal: 16,
     paddingVertical: 4,
+  },
+  stepHistoryItem: {
+    fontSize: 13,
+    color: "#636366",
+    lineHeight: 20,
+  },
+  stepHistoryItemActive: {
+    color: "#A78BFA",
+    fontWeight: "600",
   },
 });

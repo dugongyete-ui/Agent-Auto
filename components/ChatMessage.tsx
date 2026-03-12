@@ -195,6 +195,7 @@ function renderInline(text: string, color: string): React.ReactNode[] {
 export function ChatMessageBubble({ message }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
+  const isAsk = message.role === "ask";
   const segments = useMemo(() => parseContent(message.content), [message.content]);
 
   const handleCopy = async () => {
@@ -208,14 +209,13 @@ export function ChatMessageBubble({ message }: ChatMessageProps) {
     <View style={[styles.container, isUser && styles.containerUser]}>
       {!isUser && (
         <View style={styles.avatarContainer}>
-          <View style={styles.avatar}>
-            <Ionicons name="sparkles" size={14} color="#FFFFFF" />
+          <View style={[styles.avatar, isAsk && styles.avatarAsk]}>
+            <Ionicons name={isAsk ? "help" : "sparkles"} size={14} color="#FFFFFF" />
           </View>
         </View>
       )}
       <View style={[styles.bubbleWrapper, isUser && styles.bubbleWrapperUser]}>
-        <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
-          {/* Attachments */}
+        <View style={[styles.bubble, isUser ? styles.userBubble : isAsk ? styles.askBubble : styles.aiBubble]}>
           {message.attachments?.map((att, i) => (
             <Image
               key={i}
@@ -225,7 +225,6 @@ export function ChatMessageBubble({ message }: ChatMessageProps) {
             />
           ))}
 
-          {/* Content */}
           {segments.map((segment, i) =>
             segment.type === "code" ? (
               <CodeBlock key={i} code={segment.content} language={segment.language} />
@@ -234,7 +233,12 @@ export function ChatMessageBubble({ message }: ChatMessageProps) {
             ),
           )}
 
-          {/* Error */}
+          {isAsk && (
+            <View style={styles.askBadge}>
+              <Text style={styles.askBadgeText}>{"⏳ Menunggu balasan Anda..."}</Text>
+            </View>
+          )}
+
           {message.error && (
             <View style={styles.errorContainer}>
               <Ionicons name="alert-circle" size={14} color="#FF453A" />
@@ -243,7 +247,6 @@ export function ChatMessageBubble({ message }: ChatMessageProps) {
           )}
         </View>
 
-        {/* Copy button for AI messages */}
         {!isUser && message.content.length > 0 && !message.isStreaming && (
           <TouchableOpacity
             onPress={handleCopy}
@@ -284,6 +287,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  avatarAsk: {
+    backgroundColor: "#7C3AED",
+  },
   bubbleWrapper: {
     maxWidth: "85%",
     alignItems: "flex-start",
@@ -303,6 +309,24 @@ const styles = StyleSheet.create({
   aiBubble: {
     backgroundColor: "transparent",
     paddingHorizontal: 0,
+  },
+  askBubble: {
+    backgroundColor: "rgba(124,58,237,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(124,58,237,0.4)",
+    paddingHorizontal: 14,
+  },
+  askBadge: {
+    marginTop: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: "rgba(124,58,237,0.15)",
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  askBadgeText: {
+    fontSize: 12,
+    color: "#A78BFA",
   },
   messageText: {
     fontFamily: "Inter_400Regular",

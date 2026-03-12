@@ -856,7 +856,7 @@ class DzeckAgent:
             yield {"type": "__result__", "value": text or "Done"}
             return
 
-        # ── Special: message_ask_user → emit as "ask" role bubble to show waiting indicator ──
+        # ── Special: message_ask_user → emit as "ask" role bubble, then halt execution ──
         if resolved == "message_ask_user":
             text = fn_args.get("text", "") or fn_args.get("message", "")
             if text:
@@ -866,11 +866,9 @@ class DzeckAgent:
                     yield make_event("message_chunk", chunk=text[i:i + chunk_size], role="ask")
                     await asyncio.sleep(0.008)
                 yield make_event("message_end", role="ask")
-            _res = resolved
-            _args = dict(fn_args)
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, lambda: execute_tool(_res, _args))
-            yield {"type": "__result__", "value": text or "Done"}
+            yield make_event("waiting_for_user", text=text or "Menunggu balasan Anda...")
+            yield make_event("done", success=True, waiting_for_user=True, session_id=os.environ.get("DZECK_SESSION_ID", ""))
+            yield {"type": "__step_done__"}
             return
 
         toolkit_name = get_toolkit_name(resolved)

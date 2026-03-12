@@ -110,6 +110,7 @@ export type AgentEventType =
   | "title"
   | "thinking"
   | "wait"
+  | "waiting_for_user"
   | "notify"
   | "files"
   | "session"
@@ -216,7 +217,7 @@ export async function* streamAgent(
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "ask";
   content: string;
   timestamp: number;
   attachments?: ChatAttachment[];

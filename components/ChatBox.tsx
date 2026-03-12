@@ -16,6 +16,7 @@ interface ChatBoxProps {
   onStop?: () => void;
   isLoading?: boolean;
   isAgentMode?: boolean;
+  isWaitingForUser?: boolean;
   attachments?: ChatAttachment[];
 }
 
@@ -26,29 +27,34 @@ export function ChatBox({
   onStop,
   isLoading = false,
   isAgentMode = false,
+  isWaitingForUser = false,
   attachments = [],
 }: ChatBoxProps) {
   const inputRef = useRef<TextInput>(null);
 
-  const canSend = value.trim().length > 0 && !isLoading;
+  const inputEditable = !isLoading || isWaitingForUser;
+  const showSendButton = !isLoading || isWaitingForUser;
+  const canSend = value.trim().length > 0 && inputEditable;
+
+  const placeholder = isWaitingForUser
+    ? "Ketik balasan Anda..."
+    : isAgentMode
+      ? "Pesan untuk Agent AI..."
+      : "Kirim pesan ke Dzeck AI...";
 
   return (
     <View style={styles.container}>
-      <View style={styles.inputWrapper}>
+      <View style={[styles.inputWrapper, isWaitingForUser && styles.inputWrapperWaiting]}>
         <TextInput
           ref={inputRef}
           style={styles.input}
-          placeholder={
-            isAgentMode
-              ? "Pesan untuk Agent AI..."
-              : "Kirim pesan ke Dzeck AI..."
-          }
-          placeholderTextColor="#636366"
+          placeholder={placeholder}
+          placeholderTextColor={isWaitingForUser ? "#A78BFA" : "#636366"}
           value={value}
           onChangeText={onChangeText}
           multiline
           maxLength={4000}
-          editable={!isLoading}
+          editable={inputEditable}
           onSubmitEditing={Platform.OS === "web" ? onSubmit : undefined}
           blurOnSubmit={false}
         />
@@ -62,7 +68,7 @@ export function ChatBox({
         </View>
 
         <View style={styles.toolbarRight}>
-          {isLoading ? (
+          {isLoading && !isWaitingForUser ? (
             <TouchableOpacity onPress={onStop} style={styles.toolbarBtn} activeOpacity={0.6}>
               <View style={styles.stopIcon}>
                 <Ionicons name="stop" size={14} color="#FFFFFF" />
@@ -101,6 +107,10 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === "ios" ? 10 : 8,
     maxHeight: 120,
     marginBottom: 6,
+  },
+  inputWrapperWaiting: {
+    borderColor: "rgba(108,92,231,0.5)",
+    backgroundColor: "rgba(108,92,231,0.08)",
   },
   input: {
     fontSize: 15,
