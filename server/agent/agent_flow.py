@@ -866,6 +866,12 @@ class DzeckAgent:
                     yield make_event("message_chunk", chunk=text[i:i + chunk_size], role="ask")
                     await asyncio.sleep(0.008)
                 yield make_event("message_end", role="ask")
+            # Mark this step as COMPLETED so that on continuation get_next_step()
+            # skips it and resumes from the NEXT pending step (not re-ask the question).
+            step.status = ExecutionStatus.COMPLETED
+            step.success = True
+            step.result = "Pertanyaan diajukan ke user: " + (text[:200] if text else "")
+            yield make_event("step", status=StepStatus.COMPLETED.value, step=step.to_dict())
             yield make_event("waiting_for_user", text=text or "Menunggu balasan Anda...")
             # NOTE: Do NOT yield "done" here — that would prematurely close the SSE stream.
             # The final "done" is yielded by run_async after saving waiting state.
