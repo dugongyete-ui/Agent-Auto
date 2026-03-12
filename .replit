@@ -49,6 +49,7 @@ externalPort = 8099
 [[ports]]
 localPort = 9222
 externalPort = 3003
+exposeLocalhost = true
 
 [env]
 PORT = "5000"
