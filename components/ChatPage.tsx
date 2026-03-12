@@ -61,6 +61,7 @@ export function ChatPage({
   const toolsRef = useRef<ToolItem[]>([]);
   const planMsgIdRef = useRef<string | null>(null);
   const currentPlanRef = useRef<AgentPlan | null>(null);
+  const activeSessionIdRef = useRef<string | undefined>(sessionId);
 
   useEffect(() => {
     toolsRef.current = tools;
@@ -79,6 +80,9 @@ export function ChatPage({
     const type = event.type;
 
     if (type === "session") {
+      if (event.session_id) {
+        activeSessionIdRef.current = event.session_id;
+      }
       return;
     }
 
@@ -365,6 +369,7 @@ export function ChatPage({
             messages: historyMsgs,
             model: "@cf/meta/llama-3.1-70b-instruct",
             attachments: [],
+            session_id: activeSessionIdRef.current,
           },
           {
             onMessage: handleEvent,
