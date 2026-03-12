@@ -1570,93 +1570,116 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                     self.plan = Plan.from_dict(session["plan"])
                     yield make_event("session", action="resumed", session_id=resume_from_session)
 
-            if self.session_id and svc:
-                waiting_state = await svc.load_waiting_state(self.session_id)
-            else:
-                waiting_state = None
+            waiting_state = None
+            if self.session_id:
+                if svc:
+                    waiting_state = await svc.load_waiting_state(self.session_id)
+                if waiting_state is None:
+                    from server.agent.services.session_service import _file_load_waiting_state
+                    waiting_state = _file_load_waiting_state(self.session_id)
 
-            if is_continuation and waiting_state and self.session_id and svc:
-                await svc.clear_waiting_state(self.session_id)
-                self.plan = Plan.from_dict(waiting_state["plan"])
-                original_user_message = waiting_state.get("user_message", user_message)
+            if is_continuation and waiting_state and self.session_id:
+                if svc:
+                    await svc.clear_waiting_state(self.session_id)
+                else:
+                    from server.agent.services.session_service import _file_clear_waiting_state
+                    _file_clear_waiting_state(self.session_id)
 
-                yield make_event("plan", status=PlanStatus.RUNNING.value, plan=safe_plan_dict(self.plan))
+                if waiting_state.get("clarification_mode"):
+                    original_message = waiting_state.get("user_message", user_message)
+                    user_message = "{}\n\nKlarifikasi dari user: {}".format(original_message, user_message)
+                    is_continuation = False
+                else:
+                    self.plan = Plan.from_dict(waiting_state["plan"])
+                    original_user_message = waiting_state.get("user_message", user_message)
 
-                step_waiting = False
-                while True:
-                    step = self.plan.get_next_step()
-                    if not step:
-                        break
+                    yield make_event("plan", status=PlanStatus.RUNNING.value, plan=safe_plan_dict(self.plan))
 
                     step_waiting = False
-                    async for event in self.execute_step_async(self.plan, step, original_user_message, user_reply=user_message):
-                        if event.get("type") == "waiting_for_user":
-                            step_waiting = True
-                        yield event
+                    while True:
+                        step = self.plan.get_next_step()
+                        if not step:
+                            break
 
-                    if self.session_id and svc:
-                        await svc.save_step_completed(self.session_id, step.to_dict())
-
-                    if step_waiting:
-                        pending = [s.to_dict() for s in self.plan.steps if not s.is_done()]
-                        if self.session_id and svc:
-                            await svc.save_waiting_state(
-                                self.session_id,
-                                self.plan.to_dict(),
-                                pending,
-                                original_user_message,
-                                chat_history=self.chat_history,
-                            )
-                            await svc.save_plan_snapshot(self.session_id, self.plan.to_dict())
-                        break
-
-                    next_step = self.plan.get_next_step()
-                    if next_step:
-                        yield make_event("plan", status=PlanStatus.UPDATING.value,
-                                         plan=safe_plan_dict(self.plan))
-                        plan_event = await self.update_plan_async(self.plan, step)
-                        if plan_event:
-                            yield plan_event
-
-                if not step_waiting:
-                    for s in self.plan.steps:
-                        if s.status in (ExecutionStatus.RUNNING, ExecutionStatus.PENDING):
-                            s.status = ExecutionStatus.COMPLETED
-                            s.success = True
-                            if not s.result:
-                                s.result = "Step completed"
-                            yield make_event("step", status=StepStatus.COMPLETED.value, step=s.to_dict())
-
-                    self.plan.status = ExecutionStatus.COMPLETED
-                    yield make_event("plan", status=PlanStatus.COMPLETED.value,
-                                     plan=safe_plan_dict(self.plan))
-
-                    summary_chunks: List[str] = []
-                    async def _summarize_cont():
-                        async for event in self.summarize_async(self.plan, original_user_message):
-                            if event.get("type") == "message_chunk":
-                                summary_chunks.append(event.get("chunk", ""))
+                        step_waiting = False
+                        async for event in self.execute_step_async(self.plan, step, original_user_message, user_reply=user_message):
+                            if event.get("type") == "waiting_for_user":
+                                step_waiting = True
                             yield event
-                    async for event in _summarize_cont():
-                        yield event
 
-                    self.state = FlowState.COMPLETED
-                    summary_text = "".join(summary_chunks)
-                    if summary_text:
-                        self.chat_history.append({"role": "user", "content": original_user_message})
-                        self.chat_history.append({"role": "assistant", "content": summary_text})
                         if self.session_id and svc:
-                            try:
-                                await svc.save_chat_history(self.session_id, self.chat_history[-40:])
-                            except Exception:
-                                pass
-                    if self.session_id and svc:
-                        await svc.complete_session(self.session_id, success=True)
-                    if self._created_files:
-                        yield make_event("files", files=self._created_files)
+                            await svc.save_step_completed(self.session_id, step.to_dict())
 
-                yield make_event("done", success=True, session_id=self.session_id)
-                return
+                        if step_waiting:
+                            pending = [s.to_dict() for s in self.plan.steps if not s.is_done()]
+                            if self.session_id:
+                                if svc:
+                                    await svc.save_waiting_state(
+                                        self.session_id,
+                                        self.plan.to_dict(),
+                                        pending,
+                                        original_user_message,
+                                        chat_history=self.chat_history,
+                                    )
+                                    await svc.save_plan_snapshot(self.session_id, self.plan.to_dict())
+                                else:
+                                    from server.agent.services.session_service import _file_save_waiting_state
+                                    _file_save_waiting_state(self.session_id, {
+                                        "waiting_for_user": True,
+                                        "plan": self.plan.to_dict(),
+                                        "pending_steps": pending,
+                                        "user_message": original_user_message,
+                                        "chat_history": self.chat_history,
+                                    })
+                            break
+
+                        next_step = self.plan.get_next_step()
+                        if next_step:
+                            yield make_event("plan", status=PlanStatus.UPDATING.value,
+                                             plan=safe_plan_dict(self.plan))
+                            plan_event = await self.update_plan_async(self.plan, step)
+                            if plan_event:
+                                yield plan_event
+
+                    if not step_waiting:
+                        for s in self.plan.steps:
+                            if s.status in (ExecutionStatus.RUNNING, ExecutionStatus.PENDING):
+                                s.status = ExecutionStatus.COMPLETED
+                                s.success = True
+                                if not s.result:
+                                    s.result = "Step completed"
+                                yield make_event("step", status=StepStatus.COMPLETED.value, step=s.to_dict())
+
+                        self.plan.status = ExecutionStatus.COMPLETED
+                        yield make_event("plan", status=PlanStatus.COMPLETED.value,
+                                         plan=safe_plan_dict(self.plan))
+
+                        summary_chunks: List[str] = []
+                        async def _summarize_cont():
+                            async for event in self.summarize_async(self.plan, original_user_message):
+                                if event.get("type") == "message_chunk":
+                                    summary_chunks.append(event.get("chunk", ""))
+                                yield event
+                        async for event in _summarize_cont():
+                            yield event
+
+                        self.state = FlowState.COMPLETED
+                        summary_text = "".join(summary_chunks)
+                        if summary_text:
+                            self.chat_history.append({"role": "user", "content": original_user_message})
+                            self.chat_history.append({"role": "assistant", "content": summary_text})
+                            if self.session_id and svc:
+                                try:
+                                    await svc.save_chat_history(self.session_id, self.chat_history[-40:])
+                                except Exception:
+                                    pass
+                        if self.session_id and svc:
+                            await svc.complete_session(self.session_id, success=True)
+                        if self._created_files:
+                            yield make_event("files", files=self._created_files)
+
+                    yield make_event("done", success=True, session_id=self.session_id)
+                    return
 
             if not waiting_state and self.session_id and svc:
                 await svc.create_session(user_message, session_id=self.session_id)
@@ -1687,6 +1710,28 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
 
                 yield make_event("done", success=True, session_id=self.session_id)
                 return
+
+            if not is_continuation:
+                clarification_q = await self._pre_plan_clarification_check(
+                    user_message, chat_history=self.chat_history
+                )
+                if clarification_q:
+                    if self.session_id:
+                        from server.agent.services.session_service import _file_save_waiting_state
+                        _file_save_waiting_state(self.session_id, {
+                            "waiting_for_user": True,
+                            "plan": None,
+                            "pending_steps": [],
+                            "user_message": user_message,
+                            "chat_history": self.chat_history,
+                            "clarification_mode": True,
+                        })
+                    yield make_event("message_start", role="ask")
+                    yield make_event("message_chunk", chunk=clarification_q, role="ask")
+                    yield make_event("message_end", role="ask")
+                    yield make_event("waiting_for_user", text=clarification_q)
+                    yield make_event("done", success=True, session_id=self.session_id)
+                    return
 
             self.state = FlowState.PLANNING
             yield make_event("plan", status=PlanStatus.CREATING.value)
@@ -1733,15 +1778,25 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
 
                 if step_waiting:
                     pending = [s.to_dict() for s in self.plan.steps if not s.is_done()]
-                    if self.session_id and svc:
-                        await svc.save_waiting_state(
-                            self.session_id,
-                            self.plan.to_dict(),
-                            pending,
-                            user_message,
-                            chat_history=self.chat_history,
-                        )
-                        await svc.save_plan_snapshot(self.session_id, self.plan.to_dict())
+                    if self.session_id:
+                        if svc:
+                            await svc.save_waiting_state(
+                                self.session_id,
+                                self.plan.to_dict(),
+                                pending,
+                                user_message,
+                                chat_history=self.chat_history,
+                            )
+                            await svc.save_plan_snapshot(self.session_id, self.plan.to_dict())
+                        else:
+                            from server.agent.services.session_service import _file_save_waiting_state
+                            _file_save_waiting_state(self.session_id, {
+                                "waiting_for_user": True,
+                                "plan": self.plan.to_dict(),
+                                "pending_steps": pending,
+                                "user_message": user_message,
+                                "chat_history": self.chat_history,
+                            })
                     break
 
                 next_step = self.plan.get_next_step()
