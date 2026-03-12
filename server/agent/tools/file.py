@@ -99,10 +99,15 @@ def file_read(
         is_sandbox_path = file.startswith("/home/user")
 
         file_content = None
-        if is_sandbox_path and _e2b_enabled:
+        if _e2b_enabled:
             try:
-                from server.agent.tools.e2b_sandbox import read_file as e2b_read
-                file_content = e2b_read(file)
+                from server.agent.tools.e2b_sandbox import read_file as e2b_read, WORKSPACE_DIR as _WS
+                sandbox_path = file
+                if not file.startswith("/"):
+                    sandbox_path = os.path.join(_WS, file)
+                elif not is_sandbox_path and not file.startswith("/tmp"):
+                    sandbox_path = os.path.join(_WS, os.path.basename(file))
+                file_content = e2b_read(sandbox_path)
             except Exception:
                 pass
             if file_content is None:
@@ -182,7 +187,13 @@ def file_write(
 
         is_deliverable = is_output_path or file.startswith("/tmp/dzeck_files")
 
-        if is_deliverable:
+        if _e2b_enabled:
+            # Saat E2B aktif: semua file disimpan di sandbox E2B.
+            # Locally hanya disimpan di DZECK_FILES_DIR (temp) untuk keperluan download,
+            # TIDAK menulis ke project lokal sama sekali.
+            local_path = os.path.join(DZECK_FILES_DIR, os.path.basename(file))
+            is_deliverable = True
+        elif is_deliverable:
             local_path = os.path.join(DZECK_FILES_DIR, os.path.basename(file))
         elif is_sandbox_path:
             local_path = os.path.join(DZECK_FILES_DIR, os.path.basename(file))
@@ -203,10 +214,10 @@ def file_write(
             download_url = _register_file_for_download(local_path)
 
         msg = f"File {operation} successfully: {file} ({len(write_content)} bytes)"
-        if _e2b_enabled and not e2b_ok:
-            msg += "\n⚠️ Warning: E2B sandbox write failed. File saved locally."
-        elif _e2b_enabled and is_sandbox_path and not is_deliverable:
-            msg += "\nFile tersedia di sandbox untuk eksekusi."
+        if _e2b_enabled and e2b_ok:
+            msg += "\n✅ File tersimpan di E2B sandbox (tidak di project lokal)."
+        elif _e2b_enabled and not e2b_ok:
+            msg += "\n⚠️ Warning: E2B sandbox write failed. File disimpan sementara di temp folder."
         if is_deliverable and download_url:
             msg += "\n📎 File siap didownload."
 
@@ -240,10 +251,15 @@ def file_str_replace(
         is_sandbox_path = file.startswith("/home/user")
 
         content = None
-        if is_sandbox_path and _e2b_enabled:
+        if _e2b_enabled:
             try:
-                from server.agent.tools.e2b_sandbox import read_file as e2b_read
-                content = e2b_read(file)
+                from server.agent.tools.e2b_sandbox import read_file as e2b_read, WORKSPACE_DIR as _WS
+                sandbox_path = file
+                if not file.startswith("/"):
+                    sandbox_path = os.path.join(_WS, file)
+                elif not is_sandbox_path and not file.startswith("/tmp"):
+                    sandbox_path = os.path.join(_WS, os.path.basename(file))
+                content = e2b_read(sandbox_path)
             except Exception:
                 pass
             if content is None:
@@ -281,7 +297,10 @@ def file_str_replace(
         is_output_path = "/output/" in file or file.startswith("/home/user/dzeck-ai/output")
         is_deliverable = is_output_path or file.startswith("/tmp/dzeck_files")
 
-        if is_deliverable:
+        if _e2b_enabled:
+            local_path = os.path.join(DZECK_FILES_DIR, os.path.basename(file))
+            is_deliverable = True
+        elif is_deliverable:
             local_path = os.path.join(DZECK_FILES_DIR, os.path.basename(file))
         elif is_sandbox_path:
             local_path = os.path.join(DZECK_FILES_DIR, os.path.basename(file))
