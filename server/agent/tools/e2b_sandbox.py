@@ -25,6 +25,36 @@ _MAX_CREATE_ATTEMPTS = 3
 WORKSPACE_DIR = "/home/user/dzeck-ai"
 OUTPUT_DIR = "/home/user/dzeck-ai/output"
 
+_file_cache_lock = threading.Lock()
+_file_cache: Dict[str, str] = {}
+
+
+def _cache_file(path: str, content: str) -> None:
+    with _file_cache_lock:
+        _file_cache[path] = content
+
+
+def _replay_file_cache(sb: Any) -> None:
+    with _file_cache_lock:
+        if not _file_cache:
+            return
+        logger.info("[E2B] Replaying %d cached files to new sandbox...", len(_file_cache))
+        for path, content in _file_cache.items():
+            try:
+                import shlex
+                parent = "/".join(path.split("/")[:-1])
+                if parent:
+                    sb.commands.run(f"mkdir -p {shlex.quote(parent)}", timeout=10)
+                sb.files.write(path, content)
+            except Exception as e:
+                logger.warning("[E2B] Failed to replay cached file %s: %s", path, e)
+
+
+def clear_file_cache() -> None:
+    with _file_cache_lock:
+        _file_cache.clear()
+    logger.info("[E2B] File cache cleared.")
+
 
 def _is_sandbox_alive(sb: Any) -> bool:
     """Quick health check for the sandbox."""
@@ -85,6 +115,8 @@ def _create_sandbox() -> Optional[Any]:
                 timeout=10
             )
 
+            _replay_file_cache(sb)
+
             logger.info("[E2B] Workspace ready (id=%s)", sb.sandbox_id)
             _sandbox_create_attempts = 0
             return sb
@@ -138,6 +170,19 @@ def run_command(command: str, workdir: str = WORKSPACE_DIR, timeout: int = 120) 
                 "exit_code": -1,
             }
         try:
+            if workdir and workdir.startswith("/home/user/dzeck-ai"):
+                import shlex
+                try:
+                    sb.commands.run(f"mkdir -p {shlex.quote(workdir)}", timeout=10)
+                except Exception:
+                    pass
+
+            if "yt-dlp" in command:
+                try:
+                    sb.commands.run("yt-dlp --version >/dev/null 2>&1 || pip install -q yt-dlp", timeout=60)
+                except Exception:
+                    pass
+
             result = sb.commands.run(command, cwd=workdir, timeout=timeout)
             return {
                 "success": (result.exit_code == 0),
@@ -240,6 +285,7 @@ def write_file(path: str, content: str, append: bool = False) -> bool:
                 pass
             content = existing + content
         sb.files.write(path, content)
+        _cache_file(path, content)
         return True
     except Exception as e:
         logger.warning("[E2B] Failed to write file %s: %s", path, e)

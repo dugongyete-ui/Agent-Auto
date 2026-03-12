@@ -50,7 +50,7 @@ def _get_session(sid: str) -> Optional[Dict[str, Any]]:
 
 
 def _run_e2b(command: str, exec_dir: str = "/home/user/dzeck-ai", timeout: int = 90) -> Dict[str, Any]:
-    """Execute command via E2B cloud sandbox."""
+    """Execute command via E2B cloud sandbox. Auto-ensures workspace dir exists."""
     try:
         from server.agent.tools.e2b_sandbox import run_command
         return run_command(command, workdir=exec_dir, timeout=timeout)

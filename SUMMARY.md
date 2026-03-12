@@ -87,6 +87,11 @@ assets/images/          ← Logo dan icon assets
 - File download: file output agent bisa didownload user
 - Browser CDP mode: persistent Chromium terhubung ke Python agent via CDP
 - Splash screen dengan logo Dzeck AI (tanpa duplikasi nama teks)
+- **E2B file cache & replay**: File yang ditulis via `file_write` di-cache di memori dan otomatis di-replay ke sandbox baru saat sandbox restart — menghilangkan error "No such file or directory"
+- **E2B workspace auto-init**: Setiap `shell_exec` dan `run_command` otomatis membuat workspace dir (`mkdir -p`) sebelum menjalankan command
+- **E2B Browser persistent CDP session**: `E2BBrowserSession` meluncurkan Chromium sekali sebagai background process di E2B sandbox dengan `--remote-debugging-port`, lalu semua tool call (navigate/click/type/scroll) connect ke browser yang SAMA via CDP — halaman tetap hidup antar tool call tanpa membuka browser baru
+- **yt-dlp auto-install**: Jika command menggunakan yt-dlp, otomatis dicek dan di-install jika belum tersedia
+- **System prompt VNC+E2B sync**: Instruksi eksplisit untuk browser VNC stateful, file execution rules, dan workspace persistence
 
 ---
 

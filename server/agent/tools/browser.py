@@ -92,46 +92,145 @@ atexit.register(_disconnect_browser_on_exit)
 
 # ─── E2B Browser Session ────────────────────────────────────────────────────
 
+_E2B_CDP_PORT = 9223
+_E2B_CDP_URL = "http://127.0.0.1:{}".format(_E2B_CDP_PORT)
+
+
 class E2BBrowserSession:
-    """Browser session that runs Playwright inside E2B cloud sandbox."""
+    """Fallback browser session that runs a persistent Chromium inside E2B cloud sandbox.
+    Used only when local Playwright/VNC is unavailable (see _make_session priority).
+    Chromium is launched once as a background process with --remote-debugging-port.
+    All subsequent tool calls connect to the SAME browser via CDP, so the page
+    stays alive between navigate/click/type/scroll calls.
+    If DISPLAY is set in the sandbox, Chromium runs non-headless (visible).
+    Note: For VNC-visible browsing, the primary PlaywrightSession (CDP to local
+    Chromium on port 9222) is used — it is already fully stateful."""
 
     def __init__(self) -> None:
         self.current_url: Optional[str] = None
         self.console_logs: List[str] = []
         self._page_state: dict = {}
+        self._browser_launched: bool = False
 
-    def _run_playwright(self, script: str, timeout: int = 60) -> dict:
+    def _run_script(self, script: str, timeout: int = 60) -> dict:
         from server.agent.tools.e2b_sandbox import run_browser_script
         return run_browser_script(script, timeout=timeout)
 
-    def _make_script(self, template: str, **kwargs) -> str:
-        """Safely inject variables into a script template using simple replacement."""
-        script = template
-        for key, val in kwargs.items():
-            script = script.replace("__" + key + "__", repr(val))
-        return script
+    def _ensure_browser(self) -> bool:
+        if self._browser_launched:
+            check_script = '''
+import json, urllib.request
+try:
+    resp = urllib.request.urlopen("http://127.0.0.1:{}/json/version", timeout=3)
+    data = json.loads(resp.read())
+    print(json.dumps({{"success": True, "browser": data.get("Browser", "")}}))
+except Exception as e:
+    print(json.dumps({{"success": False, "error": str(e)}}))
+'''.format(_E2B_CDP_PORT)
+            res = self._run_script(check_script, timeout=10)
+            if res.get("success"):
+                return True
+            self._browser_launched = False
 
-    def navigate(self, url: str) -> ToolResult:
-        script = self._make_script('''
+        launch_script = '''
+import json, subprocess, time, urllib.request, shutil, glob
+try:
+    chrome_bin = None
+    for candidate in ["chromium-browser", "chromium", "google-chrome", "google-chrome-stable"]:
+        if shutil.which(candidate):
+            chrome_bin = candidate
+            break
+    if not chrome_bin:
+        pw_candidates = sorted(glob.glob("/root/.cache/ms-playwright/chromium-*/chrome-linux*/chrome"), reverse=True)
+        if not pw_candidates:
+            pw_candidates = sorted(glob.glob("/home/*/.cache/ms-playwright/chromium-*/chrome-linux*/chrome"), reverse=True)
+        if pw_candidates:
+            chrome_bin = pw_candidates[0]
+    if not chrome_bin:
+        try:
+            subprocess.run(["playwright", "install", "chromium"], capture_output=True, timeout=60)
+            pw_candidates = sorted(glob.glob("/root/.cache/ms-playwright/chromium-*/chrome-linux*/chrome"), reverse=True)
+            if pw_candidates:
+                chrome_bin = pw_candidates[0]
+        except Exception:
+            pass
+    if not chrome_bin:
+        print(json.dumps({{"success": False, "error": "No Chromium binary found in E2B sandbox"}}))
+    else:
+        import os as _os
+        has_display = bool(_os.environ.get("DISPLAY"))
+        headless_args = ["--headless"] if not has_display else []
+        subprocess.Popen(
+            [chrome_bin] + headless_args + ["--no-sandbox", "--disable-dev-shm-usage",
+             "--disable-gpu", "--remote-debugging-port={port}",
+             "--remote-debugging-address=127.0.0.1",
+             "--user-data-dir=/tmp/e2b_chromium_profile",
+             "--window-size=1280,720"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        for i in range(15):
+            time.sleep(1)
+            try:
+                resp = urllib.request.urlopen("http://127.0.0.1:{port}/json/version", timeout=2)
+                data = json.loads(resp.read())
+                print(json.dumps({{"success": True, "browser": data.get("Browser", "")}}))
+                break
+            except Exception:
+                pass
+        else:
+            print(json.dumps({{"success": False, "error": "Chromium CDP did not start within 15s"}}))
+except Exception as e:
+    print(json.dumps({{"success": False, "error": str(e)}}))
+'''.format(port=_E2B_CDP_PORT)
+        res = self._run_script(launch_script, timeout=30)
+        if res.get("success"):
+            self._browser_launched = True
+            logger.info("[E2B Browser] Persistent Chromium launched (CDP port %d)", _E2B_CDP_PORT)
+            return True
+        logger.warning("[E2B Browser] Failed to launch persistent Chromium: %s", res.get("error"))
+        return False
+
+    def _run_cdp_action(self, action_code: str, timeout: int = 60) -> dict:
+        script = '''
 import json
 try:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox","--disable-dev-shm-usage","--disable-gpu"])
-        ctx = browser.new_context(viewport={"width":1280,"height":720},
-            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        page = ctx.new_page()
-        page.goto(__url__, wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(1200)
-        title = page.title()
-        content = page.inner_text("body")[:8000]
+        browser = p.chromium.connect_over_cdp("http://127.0.0.1:{port}")
+        contexts = browser.contexts
+        if contexts:
+            ctx = contexts[0]
+            pages = ctx.pages
+            if pages:
+                page = pages[0]
+            else:
+                page = ctx.new_page()
+        else:
+            ctx = browser.new_context(viewport={{"width":1280,"height":720}},
+                user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            page = ctx.new_page()
+
+{action}
+
         current_url = page.url
-        browser.close()
-        print(json.dumps({"success":True,"url":current_url,"title":title,"content":content}))
+        title = page.title()
+        try:
+            content = page.inner_text("body")[:8000]
+        except Exception:
+            content = ""
+        browser.disconnect()
+        print(json.dumps({{"success":True,"url":current_url,"title":title,"content":content}}))
 except Exception as e:
-    print(json.dumps({"success":False,"error":str(e)}))
-''', url=url)
-        res = self._run_playwright(script, timeout=60)
+    print(json.dumps({{"success":False,"error":str(e)}}))
+'''.format(port=_E2B_CDP_PORT, action=action_code)
+        return self._run_script(script, timeout=timeout)
+
+    def navigate(self, url: str) -> ToolResult:
+        if not self._ensure_browser():
+            return ToolResult(success=False, message="E2B browser not available.")
+        safe_url = url.replace('"', '\\"').replace("'", "\\'")
+        action = '        page.goto("{url}", wait_until="domcontentloaded", timeout=30000)\n        page.wait_for_timeout(1200)'.format(url=safe_url)
+        res = self._run_cdp_action(action, timeout=60)
         if not res.get("success"):
             return ToolResult(success=False, message="Navigate failed: {}".format(res.get("error", res.get("output", ""))))
         self.current_url = res.get("url", url)
@@ -149,31 +248,34 @@ except Exception as e:
     def view(self) -> ToolResult:
         if not self.current_url:
             return ToolResult(success=False, message="No page loaded. Use browser_navigate first.")
-        return self.navigate(self.current_url)
+        was_launched = self._browser_launched
+        if not self._ensure_browser():
+            return ToolResult(success=False, message="E2B browser not available.")
+        if not was_launched and self.current_url:
+            return self.navigate(self.current_url)
+        action = '        pass'
+        res = self._run_cdp_action(action)
+        if not res.get("success"):
+            return ToolResult(success=False, message="View failed: {}".format(res.get("error", "")))
+        self.current_url = res.get("url", self.current_url)
+        self._page_state = res
+        return ToolResult(
+            success=True,
+            message="Page: {}\nURL: {}\n\n{}".format(res.get("title",""), res.get("url",""), res.get("content","")),
+            data={
+                "url": res.get("url", self.current_url),
+                "title": res.get("title", ""),
+                "content": res.get("content", ""),
+            },
+        )
 
     def click(self, x: float, y: float, button: str = "left") -> ToolResult:
         if not self.current_url:
             return ToolResult(success=False, message="No page loaded.")
-        script = self._make_script('''
-import json
-try:
-    from playwright.sync_api import sync_playwright
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox","--disable-dev-shm-usage","--disable-gpu"])
-        ctx = browser.new_context(viewport={"width":1280,"height":720})
-        page = ctx.new_page()
-        page.goto(__url__, wait_until="domcontentloaded", timeout=30000)
-        page.mouse.click(__x__, __y__, button=__button__)
-        page.wait_for_timeout(800)
-        current_url = page.url
-        title = page.title()
-        content = page.inner_text("body")[:6000]
-        browser.close()
-        print(json.dumps({"success":True,"url":current_url,"title":title,"content":content}))
-except Exception as e:
-    print(json.dumps({"success":False,"error":str(e)}))
-''', url=self.current_url, x=x, y=y, button=button)
-        res = self._run_playwright(script)
+        if not self._ensure_browser():
+            return ToolResult(success=False, message="E2B browser not available.")
+        action = '        page.mouse.click({x}, {y}, button="{btn}")\n        page.wait_for_timeout(800)'.format(x=x, y=y, btn=button)
+        res = self._run_cdp_action(action)
         self.current_url = res.get("url", self.current_url)
         return ToolResult(
             success=res.get("success", False),
@@ -182,30 +284,29 @@ except Exception as e:
         )
 
     def type_text(self, text: str) -> ToolResult:
-        return ToolResult(success=True, message="Text input queued: {}".format(repr(text)), data={"text": text})
+        if not self.current_url:
+            return ToolResult(success=False, message="No page loaded.")
+        if not self._ensure_browser():
+            return ToolResult(success=False, message="E2B browser not available.")
+        safe_text = text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t")
+        action = '        page.keyboard.type("{text}")\n        page.wait_for_timeout(500)'.format(text=safe_text)
+        res = self._run_cdp_action(action)
+        self.current_url = res.get("url", self.current_url)
+        return ToolResult(
+            success=res.get("success", False),
+            message="Typed: {}. Page: {}\n\n{}".format(repr(text), res.get("title",""), res.get("content","")),
+            data={"text": text, "url": res.get("url", self.current_url)},
+        )
 
     def scroll(self, direction: str, amount: int = 3) -> ToolResult:
         if not self.current_url:
             return ToolResult(success=False, message="No page loaded.")
+        if not self._ensure_browser():
+            return ToolResult(success=False, message="E2B browser not available.")
         delta_y = amount * 300 if direction == "down" else -amount * 300
-        script = self._make_script('''
-import json
-try:
-    from playwright.sync_api import sync_playwright
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox","--disable-dev-shm-usage","--disable-gpu"])
-        ctx = browser.new_context(viewport={"width":1280,"height":720})
-        page = ctx.new_page()
-        page.goto(__url__, wait_until="domcontentloaded", timeout=30000)
-        page.mouse.wheel(0, __delta_y__)
-        page.wait_for_timeout(500)
-        content = page.inner_text("body")[:6000]
-        browser.close()
-        print(json.dumps({"success":True,"content":content}))
-except Exception as e:
-    print(json.dumps({"success":False,"error":str(e)}))
-''', url=self.current_url, delta_y=delta_y)
-        res = self._run_playwright(script)
+        action = '        page.mouse.wheel(0, {dy})\n        page.wait_for_timeout(500)'.format(dy=delta_y)
+        res = self._run_cdp_action(action)
+        self.current_url = res.get("url", self.current_url)
         return ToolResult(
             success=res.get("success", False),
             message="Scrolled {}.\n\n{}".format(direction, res.get("content", res.get("error", ""))),
@@ -220,14 +321,26 @@ except Exception as e:
     def save_screenshot(self, path: str) -> ToolResult:
         if not self.current_url:
             return ToolResult(success=False, message="No page loaded.")
+        if not self._ensure_browser():
+            return ToolResult(success=False, message="E2B browser not available.")
+        safe_path = path.replace("\\", "\\\\").replace('"', '\\"')
+        action = '        import os as _os\n        _os.makedirs(_os.path.dirname("{path}") or ".", exist_ok=True)\n        screenshot_data = page.screenshot(type="png", full_page=False)\n        with open("{path}", "wb") as f:\n            f.write(screenshot_data)'.format(path=safe_path)
+        res = self._run_cdp_action(action)
         return ToolResult(
-            success=True,
-            message="Screenshot captured (E2B headless). Path: {}".format(path),
+            success=res.get("success", False),
+            message="Screenshot captured (E2B). Path: {}".format(path),
             data={"save_path": path, "url": self.current_url},
         )
 
     def close(self) -> None:
-        pass
+        if self._browser_launched:
+            try:
+                from server.agent.tools.e2b_sandbox import run_command
+                run_command("pkill -f 'chromium.*remote-debugging-port={}'".format(_E2B_CDP_PORT), timeout=5)
+            except Exception:
+                pass
+            self._browser_launched = False
+        self.current_url = None
 
 
 # ─── Local Playwright Session ─────────────────────────────────────────────────
@@ -730,7 +843,7 @@ def _make_session() -> Any:
         logger.warning("[Browser] Local Playwright still unavailable.")
 
     if E2B_ENABLED:
-        logger.info("[Browser] Falling back to E2B cloud browser (screenshots only).")
+        logger.info("[Browser] Falling back to E2B cloud browser (persistent CDP, non-VNC fallback).")
         return E2BBrowserSession()
 
     logger.warning("[Browser] Using HTTP fallback (no screenshots, no JS).")
