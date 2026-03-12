@@ -1202,14 +1202,42 @@ To signal step completion, respond with:
 {"done": true, "success": true, "result": "summary of what was done"}
 
 Available tools:
+- file_read: Read a file. Args: {"file": "/path/to/file"}
+- file_write: Write/create a file. Args: {"file": "/path/to/file", "content": "..."}
+- file_str_replace: Replace string in file. Args: {"file": "/path/to/file", "old_str": "old", "new_str": "new"}
+- file_find_by_name: Find files by glob. Args: {"path": "/dir", "glob": "*.py"}
+- file_find_in_content: Search in files. Args: {"path": "/dir", "pattern": "search_regex", "glob": "**/*"}
+- image_view: View an image. Args: {"image": "/path/to/image"}
+- shell_exec: Run shell command. Args: {"id": "sess1", "exec_dir": "/home/user/dzeck-ai", "command": "ls -la"}
+- shell_view: View shell session output. Args: {"id": "sess1"}
+- shell_wait: Wait then view session. Args: {"id": "sess1", "seconds": 5}
+- shell_write_to_process: Send input to process. Args: {"id": "sess1", "input": "text", "press_enter": true}
+- shell_kill_process: Kill shell session. Args: {"id": "sess1"}
 - info_search_web: Search the web. Args: {"query": "search query"}
+- web_search: Search the web (alias for info_search_web). Args: {"query": "search query"}
 - web_browse: Open/browse a URL. Args: {"url": "https://..."}
 - browser_navigate: Navigate browser to URL. Args: {"url": "https://..."}
-- browser_view: View current page content (visible on VNC). Args: {}
-- shell_exec: Run shell command. Args: {"id": "sess1", "exec_dir": "/tmp", "command": "ls -la"}
-- file_read: Read a file. Args: {"path": "/path/to/file"}
-- file_write: Write a file. Args: {"path": "/path/to/file", "content": "..."}
+- browser_view: View current page content. Args: {}
+- browser_click: Click element on page. Args: {"coordinate_x": 100, "coordinate_y": 200}
+- browser_input: Type text into element. Args: {"coordinate_x": 100, "coordinate_y": 200, "text": "hello"}
+- browser_move_mouse: Move mouse. Args: {"coordinate_x": 100, "coordinate_y": 200}
+- browser_press_key: Press keyboard key. Args: {"key": "Enter"}
+- browser_select_option: Select dropdown option. Args: {"index": 0, "option": 1}
+- browser_scroll_up: Scroll page up. Args: {"amount": 3}
+- browser_scroll_down: Scroll page down. Args: {"amount": 3}
+- browser_console_exec: Execute JS in browser console. Args: {"javascript": "document.title"}
+- browser_console_view: View browser console logs. Args: {}
+- browser_save_image: Save screenshot of browser. Args: {"path": "/path/to/save.png"}
 - message_notify_user: Send a message to user. Args: {"text": "message"}
+- message_ask_user: Ask user a question and wait for reply. Args: {"text": "question"}
+- todo_write: Create todo checklist. Args: {"items": ["step 1", "step 2"], "title": "Task"}
+- todo_update: Update todo item. Args: {"item_text": "step 1", "completed": true}
+- todo_read: Read current todo list. Args: {}
+- task_create: Create sub-task. Args: {"description": "task desc", "task_type": "general"}
+- task_complete: Complete sub-task. Args: {"task_id": "task_xxx", "result": "summary"}
+- task_list: List all sub-tasks. Args: {}
+- mcp_list_tools: List available MCP tools. Args: {}
+- mcp_call_tool: Call an MCP tool. Args: {"tool_name": "name", "arguments": {}}
 - idle: Mark step done. Args: {"success": true, "result": "summary"}
 
 ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
@@ -1346,11 +1374,20 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                             self.memory.compact()
                         continue
 
-                step.status = ExecutionStatus.COMPLETED
-                step.success = True
-                step.result = text[:500] if text else "Step completed"
-                yield make_event("step", status=StepStatus.COMPLETED.value, step=step.to_dict())
-                return
+                if text:
+                    yield make_event("notify", message=text[:500])
+                exec_messages.append({"role": "assistant", "content": text or "(empty response)"})
+                exec_messages.append({
+                    "role": "user",
+                    "content": (
+                        "You responded with plain text instead of a tool call. "
+                        "You MUST respond with a JSON object to call a tool or signal completion. "
+                        "Use {\"tool\": \"tool_name\", \"args\": {...}} to call a tool, "
+                        "or {\"done\": true, \"success\": true, \"result\": \"summary\"} to finish. "
+                        "Try again now."
+                    ),
+                })
+                continue
 
             except Exception as e:
                 yield make_event("error", error="Step execution error: {}".format(e))
@@ -1654,12 +1691,12 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
 
                     if not step_waiting:
                         for s in self.plan.steps:
-                            if s.status in (ExecutionStatus.RUNNING, ExecutionStatus.PENDING):
-                                s.status = ExecutionStatus.COMPLETED
-                                s.success = True
+                            if s.status == ExecutionStatus.RUNNING:
+                                s.status = ExecutionStatus.FAILED
+                                s.success = False
                                 if not s.result:
-                                    s.result = "Step completed"
-                                yield make_event("step", status=StepStatus.COMPLETED.value, step=s.to_dict())
+                                    s.result = "Step did not complete"
+                                yield make_event("step", status=StepStatus.FAILED.value, step=s.to_dict())
 
                         self.plan.status = ExecutionStatus.COMPLETED
                         yield make_event("plan", status=PlanStatus.COMPLETED.value,
@@ -1820,12 +1857,12 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
 
             if not step_waiting:
                 for s in self.plan.steps:
-                    if s.status in (ExecutionStatus.RUNNING, ExecutionStatus.PENDING):
-                        s.status = ExecutionStatus.COMPLETED
-                        s.success = True
+                    if s.status == ExecutionStatus.RUNNING:
+                        s.status = ExecutionStatus.FAILED
+                        s.success = False
                         if not s.result:
-                            s.result = "Step completed"
-                        yield make_event("step", status=StepStatus.COMPLETED.value, step=s.to_dict())
+                            s.result = "Step did not complete"
+                        yield make_event("step", status=StepStatus.FAILED.value, step=s.to_dict())
 
                 self.plan.status = ExecutionStatus.COMPLETED
                 yield make_event("plan", status=PlanStatus.COMPLETED.value,
