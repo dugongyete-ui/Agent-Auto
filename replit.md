@@ -24,6 +24,10 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - **Execution Prompt Updated:** `server/agent/prompts/execution.py` — removed "headless sandbox" restrictions. AI is now instructed that the browser runs on real VNC and can click, scroll, type just like a human operating a computer.
 - **Web UI — Duplicate Name Removed:** `server/templates/web-chat.html` — removed all HTML text occurrences of "Dzeck AI" name (splash title, sidebar app name, header title default). Only the logo image (which already contains the brand name) remains, avoiding duplication.
 - **Browser VNC Control:** Agent browser tools (browser_navigate, browser_click, browser_input, browser_scroll_up/down, browser_press_key, browser_select_option, browser_move_mouse) are fully active and run in the VNC-visible Chromium session via CDP. AI controls browser exactly like a human.
+- **Race Condition Bug Fixed:** `message_notify_user` emits `"notify"` event type (inline note inside step card) instead of `message_start/chunk/end`; `message_ask_user` emits `role: "ask"` to distinguish from final AI response bubbles.
+- **Step History Navigator ("Loncat ke Live"):** Full scrubber added to Komputer Dzeck panel — `captureStepSnapshot`, `navigateHistory`, `jumpToLive`, `_renderHistoryFrame`, scrubber drag/touch handlers, prev/next buttons, and dot markers. State: `S.stepHistory`, `historyIdx`, `_liveTermHTML/Url`.
+- **Real-time Token Streaming:** `summarize_async` now uses `call_cf_streaming_realtime` for true token-by-token streaming. `message_correct` event handles post-stream JSON wrapper cleanup.
+- **"Menunggu Balasan" Badge:** `createAiMsg(isAsk)` now renders a pulsing yellow badge "Dzeck sedang menunggu balasan Anda" when agent calls `message_ask_user`. Badge automatically removed when user sends next message via `appendUserMsg`.
 
 ## System Architecture
 

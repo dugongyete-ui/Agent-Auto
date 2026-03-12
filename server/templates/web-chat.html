@@ -224,6 +224,13 @@
     .msg-ai{display:flex;flex-direction:column;gap:4px;padding:8px 16px 4px;
       max-width:720px;margin:0 auto;width:100%;animation:fadeUp .2s ease}
     .msg-ai-header{display:flex;align-items:center;gap:7px;margin-bottom:4px}
+    .msg-ask-waiting{display:flex;align-items:center;gap:7px;padding:8px 12px;
+      margin-top:6px;background:rgba(234,179,8,.07);border:1px solid rgba(234,179,8,.2);
+      border-radius:10px;font-size:12px;color:#92400e;font-weight:500}
+    .dark .msg-ask-waiting{color:#fbbf24;background:rgba(234,179,8,.1);border-color:rgba(234,179,8,.25)}
+    .msg-ask-waiting-dot{width:7px;height:7px;border-radius:50%;background:#f59e0b;
+      animation:livePulse 1.5s ease infinite;flex-shrink:0}
+    .msg-ask-waiting-time{margin-left:auto;font-size:11px;opacity:.7}
     .ai-avatar{width:22px;height:22px;border-radius:6px;background:var(--brand);
       display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden}
     .ai-avatar img{width:22px;height:22px;object-fit:cover;border-radius:6px}
@@ -904,6 +911,7 @@ const S = {
   _lastPanelLabel: '',
   _lastPanelArg: '',
   _lastPanelIcon: '',
+  _isAskMsg: false,
 };
 
 function newSession(firstMessage) {
@@ -1065,6 +1073,12 @@ function startNewChat() {
   S.aiBodyEl = null;
   S.aiContent = '';
   S.latestScreenshot = null;
+  S.stepHistory = [];
+  S.historyIdx = -1;
+  S._liveTermHTML = null;
+  S._liveUrl = '-';
+  document.getElementById('tp-history-nav')?.classList.remove('show');
+  document.getElementById('tp-history-bar')?.classList.remove('show');
 
   hideToolPanel();
   planBarEl.classList.remove('visible');
@@ -1141,6 +1155,9 @@ function loadSession(id) {
 // MESSAGE BUILDERS
 // ═══════════════════════════════════════════════════
 function appendUserMsg(text, attachmentsOrNoSwitch) {
+  // Remove any "waiting for reply" badge when user sends a message
+  document.getElementById('ask-waiting-badge')?.remove();
+  S._isAskMsg = false;
   const isNoSwitch = attachmentsOrNoSwitch === true;
   const attachments = Array.isArray(attachmentsOrNoSwitch) ? attachmentsOrNoSwitch : [];
   if (!isNoSwitch) switchToConv();
@@ -1160,7 +1177,7 @@ function appendUserMsg(text, attachmentsOrNoSwitch) {
   scrollBottom(true);
 }
 
-function createAiMsg() {
+function createAiMsg(isAsk) {
   document.getElementById('empty-state')?.remove();
   const wrap = document.createElement('div');
   wrap.className = 'msg-ai';
@@ -1176,7 +1193,12 @@ function createAiMsg() {
       <div class="typing-dots">
         <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
       </div>
-    </div>`;
+    </div>
+    ${isAsk ? `<div class="msg-ask-waiting" id="ask-waiting-badge">
+      <span class="msg-ask-waiting-dot"></span>
+      Dzeck sedang menunggu balasan Anda
+      <span class="msg-ask-waiting-time">${new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}</span>
+    </div>` : ''}`;
   chatEl.appendChild(wrap);
   scrollBottom(true);
   return wrap.querySelector('#ai-body-active');
@@ -2178,7 +2200,7 @@ function handleEvent(evt) {
     case 'message_start':
       hideThinking();
       if (S.aiBodyEl) { S.aiBodyEl.innerHTML=renderMarkdown(S.aiContent); S.aiBodyEl.removeAttribute('id'); }
-      S.aiBodyEl = createAiMsg(); S.aiContent='';
+      S.aiBodyEl = createAiMsg(evt.role==='ask'); S.aiContent=''; S._isAskMsg=(evt.role==='ask');
       break;
 
     case 'message_chunk':
@@ -2187,6 +2209,15 @@ function handleEvent(evt) {
         if (!S.aiBodyEl) { S.aiBodyEl=createAiMsg(); S.aiContent=''; }
         S.aiContent += evt.chunk;
         S.aiBodyEl.innerHTML = renderMarkdown(S.aiContent)+'<span class="cursor"></span>';
+        scrollBottom();
+      }
+      break;
+
+    case 'message_correct':
+      // Server detected JSON wrapping — replace accumulated content with clean text
+      if (S.aiBodyEl && evt.text) {
+        S.aiContent = evt.text;
+        S.aiBodyEl.innerHTML = renderMarkdown(evt.text) + '<span class="cursor"></span>';
         scrollBottom();
       }
       break;

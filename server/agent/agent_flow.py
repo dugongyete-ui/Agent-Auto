@@ -842,16 +842,16 @@ class DzeckAgent:
             yield {"type": "__result__", "value": text or "Done"}
             return
 
-        # ── Special: message_ask_user → emit as streaming chat bubble (user needs to respond) ──
+        # ── Special: message_ask_user → emit as "ask" role bubble to show waiting indicator ──
         if resolved == "message_ask_user":
             text = fn_args.get("text", "") or fn_args.get("message", "")
             if text:
-                yield make_event("message_start", role="assistant")
+                yield make_event("message_start", role="ask")
                 chunk_size = 10
                 for i in range(0, len(text), chunk_size):
-                    yield make_event("message_chunk", chunk=text[i:i + chunk_size], role="assistant")
+                    yield make_event("message_chunk", chunk=text[i:i + chunk_size], role="ask")
                     await asyncio.sleep(0.008)
-                yield make_event("message_end", role="assistant")
+                yield make_event("message_end", role="ask")
             _res = resolved
             _args = dict(fn_args)
             loop = asyncio.get_event_loop()
@@ -1364,13 +1364,20 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
         try:
             yield make_event("message_start", role="assistant")
             got_any = False
-            full_text_buf = ""
+            accumulated = []
             async for chunk in call_cf_streaming_realtime(messages):
                 if chunk:
-                    cleaned_chunk = _strip_json_wrapper(chunk) if chunk.strip().startswith("{") else chunk
                     got_any = True
-                    full_text_buf += cleaned_chunk
-                    yield make_event("message_chunk", chunk=cleaned_chunk, role="assistant")
+                    accumulated.append(chunk)
+                    yield make_event("message_chunk", chunk=chunk, role="assistant")
+            # If the full response happens to be JSON-wrapped, correct via final chunk
+            if accumulated:
+                full = "".join(accumulated)
+                stripped = _strip_json_wrapper(full)
+                if stripped != full:
+                    # Model outputted JSON — replace with clean text via correction chunk
+                    # Emit a special correction: instruct client to clear and re-render
+                    yield make_event("message_correct", text=stripped, role="assistant")
             if not got_any:
                 yield make_event("message_chunk", chunk="Task selesai.", role="assistant")
             yield make_event("message_end", role="assistant")
