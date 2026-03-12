@@ -58,6 +58,14 @@ function getToolDisplay(functionName: string): {
     web_browse:            { icon: "globe-outline",           color: "#5AC8FA", label: "Web Search",     argKey: "url" },
     mcp_call_tool:         { icon: "extension-puzzle-outline",color: "#64D2FF", label: "MCP",            argKey: "tool_name" },
     mcp_list_tools:        { icon: "list-outline",            color: "#64D2FF", label: "MCP",            argKey: "" },
+    message_notify_user:   { icon: "chatbubble-outline",      color: "#BF5AF2", label: "Message",        argKey: "text" },
+    message_ask_user:      { icon: "chatbubble-ellipses-outline", color: "#BF5AF2", label: "Message",    argKey: "text" },
+    todo_write:            { icon: "checkmark-circle-outline",color: "#30D158", label: "Todo",           argKey: "title" },
+    todo_update:           { icon: "checkmark-circle-outline",color: "#30D158", label: "Todo",           argKey: "item_text" },
+    todo_read:             { icon: "checkmark-circle-outline",color: "#30D158", label: "Todo",           argKey: "" },
+    task_create:           { icon: "list-circle-outline",     color: "#0A84FF", label: "Task",           argKey: "description" },
+    task_complete:         { icon: "list-circle-outline",     color: "#0A84FF", label: "Task",           argKey: "task_id" },
+    task_list:             { icon: "list-circle-outline",     color: "#0A84FF", label: "Task",           argKey: "" },
   };
   return map[functionName] || { icon: "construct-outline", color: "#8E8E93", label: functionName, argKey: "" };
 }
@@ -89,6 +97,14 @@ function getActionVerb(functionName: string): string {
     web_browse: "Browsing",
     mcp_call_tool: "Calling tool",
     mcp_list_tools: "Listing tools",
+    message_notify_user: "Notifying user",
+    message_ask_user: "Asking user",
+    todo_write: "Writing todo",
+    todo_update: "Updating todo",
+    todo_read: "Reading todos",
+    task_create: "Creating task",
+    task_complete: "Completing task",
+    task_list: "Listing tasks",
   };
   return verbs[functionName] || functionName;
 }
@@ -206,6 +222,44 @@ function FileContent({ file, content, operation }: { file?: string; content?: st
   );
 }
 
+function TodoContent({ content }: { content?: string }) {
+  if (!content) return null;
+  const lines = content.split("\n").filter(l => l.trim());
+  return (
+    <View style={styles.todoBody}>
+      {lines.map((line, i) => {
+        const checked = /^\s*-?\s*\[x\]/i.test(line);
+        const text = line.replace(/^\s*-?\s*\[[ x]\]\s*/i, "").replace(/^#+\s*/, "").trim();
+        return (
+          <View key={i} style={styles.todoItem}>
+            <Ionicons
+              name={checked ? "checkmark-circle" : "ellipse-outline"}
+              size={14}
+              color={checked ? "#30D158" : "rgba(255,255,255,0.3)"}
+            />
+            <Text style={[styles.todoText, checked && styles.todoChecked]}>{text}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function TaskContent({ content }: { content?: string }) {
+  if (!content) return null;
+  const lines = content.split("\n").filter(l => l.trim());
+  return (
+    <View style={styles.todoBody}>
+      {lines.map((line, i) => (
+        <View key={i} style={styles.todoItem}>
+          <Ionicons name="list-circle-outline" size={14} color="#0A84FF" />
+          <Text style={styles.todoText}>{line.trim()}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function ToolBody({ functionName, functionArgs, toolContent, functionResult, status }: {
   functionName: string;
   functionArgs: Record<string, unknown>;
@@ -244,6 +298,12 @@ function ToolBody({ functionName, functionArgs, toolContent, functionResult, sta
   }
 
   if (hasCalled && functionResult) {
+    if (functionName.startsWith("todo_")) {
+      return <TodoContent content={functionResult} />;
+    }
+    if (functionName.startsWith("task_")) {
+      return <TaskContent content={functionResult} />;
+    }
     return <ShellContent content={functionResult.slice(0, 1200)} />;
   }
 
@@ -560,5 +620,28 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "rgba(255,255,255,0.65)",
     lineHeight: 17,
+  },
+  todoBody: {
+    marginLeft: 3,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.06)",
+    padding: 10,
+    gap: 6,
+  },
+  todoItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  todoText: {
+    flex: 1,
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: "rgba(255,255,255,0.75)",
+    lineHeight: 17,
+  },
+  todoChecked: {
+    textDecorationLine: "line-through",
+    color: "rgba(255,255,255,0.35)",
   },
 });

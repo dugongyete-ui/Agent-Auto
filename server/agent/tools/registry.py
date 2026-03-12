@@ -117,7 +117,7 @@ TOOLKIT_MAP: Dict[str, str] = {
     "file_read": "file", "file_write": "file", "file_str_replace": "file",
     "file_find_by_name": "file", "file_find_in_content": "file",
     "image_view": "file",
-    "info_search_web": "search", "web_search": "search", "web_browse": "browser",
+    "info_search_web": "search", "web_search": "search", "web_browse": "search",
     "browser_navigate": "browser", "browser_view": "browser",
     "browser_click": "browser", "browser_input": "browser",
     "browser_move_mouse": "browser", "browser_press_key": "browser",
