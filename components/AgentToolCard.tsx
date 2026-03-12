@@ -340,55 +340,65 @@ export function AgentToolCard({ event }: AgentToolCardProps) {
         {/* Colored left accent bar */}
         <View style={[styles.accentBar, { backgroundColor: color }]} />
 
-        {/* Header row */}
-        <TouchableOpacity
-          style={styles.header}
-          onPress={toggleExpand}
-          activeOpacity={hasContent || isCalling ? 0.6 : 1}
-        >
-          {/* Icon */}
-          <View style={[styles.iconWrap, { backgroundColor: color + "18" }]}>
-            <Ionicons name={icon} size={13} color={color} />
-          </View>
+        <View style={styles.cardContent}>
+          {/* Header row */}
+          <TouchableOpacity
+            style={styles.header}
+            onPress={toggleExpand}
+            activeOpacity={hasContent || isCalling ? 0.6 : 1}
+          >
+            {/* Icon */}
+            <View style={[styles.iconWrap, { backgroundColor: color + "18" }]}>
+              <Ionicons name={icon} size={13} color={color} />
+            </View>
 
-          {/* Label + arg */}
-          <View style={styles.labelArea}>
-            <Text style={styles.labelText}>{label}</Text>
-            {primaryArg ? (
-              <Text style={[styles.argText, { color: color + "CC" }]} numberOfLines={1}>
-                {verb} {primaryArg}
+            {/* Label + arg */}
+            <View style={styles.labelArea}>
+              <Text style={styles.labelText}>{label}</Text>
+              {primaryArg ? (
+                <Text style={[styles.argText, { color: color + "CC" }]} numberOfLines={1}>
+                  {verb} {primaryArg}
+                </Text>
+              ) : (
+                <Text style={styles.argText} numberOfLines={1}>{verb}</Text>
+              )}
+            </View>
+
+            {/* Right: status + expand */}
+            <View style={styles.rightArea}>
+              {isCalling && <PulsingDot color={color} />}
+              {isCalled && <Ionicons name="checkmark-circle" size={14} color="#34C759" />}
+              {isError && <Ionicons name="close-circle" size={14} color="#FF453A" />}
+              {(hasContent || isCalling) && (
+                <Ionicons
+                  name={expanded ? "chevron-up" : "chevron-down"}
+                  size={12}
+                  color="rgba(255,255,255,0.25)"
+                  style={{ marginLeft: 4 }}
+                />
+              )}
+            </View>
+          </TouchableOpacity>
+
+          {isError && event.function_result ? (
+            <View style={styles.errorBody}>
+              <Ionicons name="alert-circle" size={13} color="#FF453A" />
+              <Text style={styles.errorText} numberOfLines={3}>
+                {event.function_result}
               </Text>
-            ) : (
-              <Text style={styles.argText} numberOfLines={1}>{verb}</Text>
-            )}
-          </View>
+            </View>
+          ) : null}
 
-          {/* Right: status + expand */}
-          <View style={styles.rightArea}>
-            {isCalling && <PulsingDot color={color} />}
-            {isCalled && <Ionicons name="checkmark-circle" size={14} color="#34C759" />}
-            {isError && <Ionicons name="close-circle" size={14} color="#FF453A" />}
-            {(hasContent || isCalling) && (
-              <Ionicons
-                name={expanded ? "chevron-up" : "chevron-down"}
-                size={12}
-                color="rgba(255,255,255,0.25)"
-                style={{ marginLeft: 4 }}
-              />
-            )}
-          </View>
-        </TouchableOpacity>
-
-        {/* Expandable body */}
-        {expanded && (
-          <ToolBody
-            functionName={functionName}
-            functionArgs={functionArgs}
-            toolContent={event.tool_content}
-            functionResult={event.function_result}
-            status={event.status || "called"}
-          />
-        )}
+          {expanded && !isError && (
+            <ToolBody
+              functionName={functionName}
+              functionArgs={functionArgs}
+              toolContent={event.tool_content}
+              functionResult={event.function_result}
+              status={event.status || "called"}
+            />
+          )}
+        </View>
       </View>
     </View>
   );
@@ -411,12 +421,33 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,69,58,0.25)",
     backgroundColor: "rgba(255,69,58,0.05)",
   },
+  errorBody: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginLeft: 3,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,69,58,0.15)",
+    backgroundColor: "rgba(255,69,58,0.06)",
+  },
+  errorText: {
+    flex: 1,
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    color: "#FF6961",
+    lineHeight: 16,
+  },
+  cardContent: {
+    flex: 1,
+    flexDirection: "column",
+  },
   accentBar: {
     width: 3,
     borderRadius: 0,
   },
   header: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,

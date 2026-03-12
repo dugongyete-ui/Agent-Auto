@@ -8,7 +8,7 @@ from typing import Optional, List
 from server.agent.models.tool_result import ToolResult
 from server.agent.tools.base import BaseTool, tool
 
-TODO_DIR = "/home/user/dzeck-ai"
+TODO_DIR = "/tmp/dzeck-ai"
 TODO_FILE = os.path.join(TODO_DIR, "todo.md")
 
 

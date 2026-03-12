@@ -501,7 +501,6 @@ def build_tool_content(tool_name: str, tool_result: ToolResult) -> Optional[Dict
             "filename": data.get("filename", ""),
             "content": str(data.get("content", ""))[:2000],
             "operation": tool_name.replace("file_", ""),
-            "download_url": data.get("download_url", ""),
         }
     elif tool_name in ("mcp_call_tool", "mcp_list_tools"):
         return {"type": "mcp", "tool": data.get("tool_name", ""), "result": str(data)[:2000]}
@@ -1910,8 +1909,6 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                     pass
             yield make_event("error", error="Agent error: {}".format(e))
             traceback.print_exc(file=sys.stderr)
-            if self._created_files:
-                yield make_event("files", files=self._created_files)
             yield make_event("done", success=False, session_id=self.session_id)
 
 
