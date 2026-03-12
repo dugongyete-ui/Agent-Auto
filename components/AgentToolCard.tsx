@@ -9,6 +9,7 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { AgentEvent, ToolContent } from "@/lib/chat";
@@ -158,7 +159,7 @@ function SearchContent({ query, results }: { query?: string; results?: { title: 
   );
 }
 
-function BrowserContent({ url, title, content }: { url?: string; title?: string; content?: string }) {
+function BrowserContent({ url, title, content, screenshotB64 }: { url?: string; title?: string; content?: string; screenshotB64?: string }) {
   return (
     <View style={styles.browserBody}>
       {url ? (
@@ -168,7 +169,15 @@ function BrowserContent({ url, title, content }: { url?: string; title?: string;
         </View>
       ) : null}
       {title ? <Text style={styles.browserTitle} numberOfLines={1}>{title}</Text> : null}
-      {content ? (
+      {screenshotB64 ? (
+        <View style={styles.screenshotWrapper}>
+          <Image
+            source={{ uri: screenshotB64 }}
+            style={styles.screenshotImage}
+            resizeMode="contain"
+          />
+        </View>
+      ) : content ? (
         <ScrollView style={styles.browserContent} showsVerticalScrollIndicator={false}>
           <Text style={styles.browserContentText} numberOfLines={8}>{content.slice(0, 800)}</Text>
         </ScrollView>
@@ -219,6 +228,7 @@ function ToolBody({ functionName, functionArgs, toolContent, functionResult, sta
           url={String(toolContent.url || "")}
           title={toolContent.title}
           content={toolContent.content}
+          screenshotB64={toolContent.screenshot_b64}
         />
       );
     }
@@ -500,6 +510,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "rgba(255,255,255,0.55)",
     lineHeight: 16,
+  },
+  screenshotWrapper: {
+    borderRadius: 6,
+    overflow: "hidden",
+    backgroundColor: "#000",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  screenshotImage: {
+    width: "100%",
+    height: 160,
   },
   // File
   fileBody: {

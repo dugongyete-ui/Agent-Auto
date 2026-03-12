@@ -139,6 +139,24 @@ export function ChatPage({
       return;
     }
 
+    if (type === "tool_stream") {
+      const callId = event.tool_call_id || "";
+      const chunk = event.chunk || "";
+      if (callId && chunk) {
+        setTools(prev => {
+          const idx = prev.findIndex(t => t.tool_call_id === callId);
+          if (idx >= 0) {
+            const updated = [...prev];
+            const existing = updated[idx].output || "";
+            updated[idx] = { ...updated[idx], output: existing + chunk };
+            return updated;
+          }
+          return prev;
+        });
+      }
+      return;
+    }
+
     if (type === "tool") {
       const toolName = event.tool_name || event.function_name || "tool";
       const callId = event.tool_call_id || `tool_${Date.now()}`;
@@ -261,6 +279,41 @@ export function ChatPage({
 
     if (type === "thinking" && event.thinking) {
       setThinking({ active: true, label: event.thinking });
+      return;
+    }
+
+    if (type === "message_correct") {
+      const correctedText = event.text || "";
+      if (correctedText && streamingMsgIdRef.current) {
+        setMessages(prev => prev.map(m =>
+          m.id === streamingMsgIdRef.current
+            ? { ...m, content: correctedText }
+            : m
+        ));
+      }
+      return;
+    }
+
+    if (type === "notify") {
+      const notifyText = event.text || event.message || "";
+      if (notifyText) {
+        setThinking({ active: true, label: notifyText });
+      }
+      return;
+    }
+
+    if (type === "files") {
+      const files = event.files as Array<{ filename: string; download_url: string; mime?: string }> | undefined;
+      if (files && files.length > 0) {
+        const fileList = files.map(f => `📎 [${f.filename}](${f.download_url})`).join("\n");
+        const fileMsg: ChatMessage = {
+          id: `msg_${Date.now()}_files`,
+          role: "assistant",
+          content: "File yang dibuat:\n" + fileList,
+          timestamp: Date.now(),
+        };
+        setMessages(prev => [...prev, fileMsg]);
+      }
       return;
     }
 

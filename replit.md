@@ -19,6 +19,12 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - Do not make changes to the `app/` folder without explicit instruction.
 - All prompts should be in Bahasa Indonesia by default.
 
+## Recent Updates (March 2026 — Session 2)
+- **Conversation Memory (Chat History):** Agent sekarang punya memori percakapan lintas pesan dalam sesi yang sama. `respond_directly_async` dan `run_planner_async` menerima parameter `chat_history`. `run_async` memuat history dari SessionService di awal, dan menyimpannya kembali setelah setiap respons. `main()` mem-parse `messages` dari frontend menjadi `chat_history` dan meneruskannya ke agent. History disimpan di Redis (cache) dan MongoDB (persistent).
+- **Browser Screenshots di Tool Cards:** `BrowserContent` di `AgentToolCard.tsx` kini merender `screenshot_b64` (base64 JPEG) yang sudah ditangkap oleh `PlaywrightSession` di `browser.py`. Screenshot ditampilkan sebagai gambar di dalam collapsed tool card.
+- **Event Handlers Baru di ChatPage:** Menambahkan handler untuk: `message_correct` (koreksi teks streaming yang di-wrap JSON), `notify` (update progress dari agent), `files` (daftar file yang dibuat), `tool_stream` (streaming output shell real-time).
+- **Type Definitions Updated:** `AgentEventType` di `lib/chat.ts` diperluas dengan `tool_stream`, `message_correct`, `notify`, `files`, `session`, `ask`. `AgentEvent` interface diperluas dengan field `text`, `files`, `action`, `session_id`.
+
 ## Recent Updates (March 2026)
 - **System Prompt Upgraded:** `server/agent/prompts/system.py` fully rewritten based on official Dzeck system prompt spec. Now includes full agent loop, planner/knowledge/datasource module docs, VNC browser rules, sandbox environment info, and all tool use rules — aligned with Manus-grade agent behavior.
 - **Execution Prompt Updated:** `server/agent/prompts/execution.py` — removed "headless sandbox" restrictions. AI is now instructed that the browser runs on real VNC and can click, scroll, type just like a human operating a computer.

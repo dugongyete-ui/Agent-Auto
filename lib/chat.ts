@@ -99,15 +99,21 @@ export type AgentEventType =
   | "plan"
   | "step"
   | "tool"
+  | "tool_stream"
   | "message"
   | "message_start"
   | "message_chunk"
   | "message_end"
+  | "message_correct"
   | "error"
   | "done"
   | "title"
   | "thinking"
-  | "wait";
+  | "wait"
+  | "notify"
+  | "files"
+  | "session"
+  | "ask";
 
 export interface AgentEvent {
   type: AgentEventType;
@@ -139,12 +145,18 @@ export interface AgentEvent {
   prompt?: string;
   // Done events
   success?: boolean;
+  session_id?: string;
   // Additional details
   details?: string;
   attachments?: string[];
   // Streaming message fields
   chunk?: string;
+  text?: string;
   isStreaming?: boolean;
+  // Files events
+  files?: Array<{ filename: string; download_url: string; mime?: string; path?: string }>;
+  // Notify events
+  action?: string;
 }
 
 /**

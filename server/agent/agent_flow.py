@@ -754,13 +754,25 @@ class DzeckAgent:
         self,
         user_message: str,
         attachments: Optional[List] = None,
+        chat_history: Optional[List[Dict[str, Any]]] = None,
     ) -> Plan:
         """Create plan asynchronously (runs sync LLM call in thread pool)."""
         self.state = FlowState.PLANNING
         language = self._detect_language(user_message)
         attachments_info = self._build_attachments_info(attachments)
+        history_context = ""
+        if chat_history:
+            history_parts = []
+            for h in chat_history[-6:]:
+                role = h.get("role", "")
+                content = h.get("content", "")
+                if role in ("user", "assistant") and content:
+                    label = "User" if role == "user" else "Dzeck"
+                    history_parts.append("{}: {}".format(label, str(content)[:500]))
+            if history_parts:
+                history_context = "\n\nKonteks percakapan sebelumnya:\n" + "\n".join(history_parts)
         prompt = CREATE_PLAN_PROMPT.format(
-            message=user_message,
+            message=user_message + history_context,
             language=language,
             attachments_info=attachments_info,
         )
@@ -1391,16 +1403,25 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
     async def respond_directly_async(
         self,
         user_message: str,
+        chat_history: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Respond directly without Plan-Act for simple queries (real-time streaming)."""
-        messages = [
-            {"role": "system", "content": (
+        sys_msg = {
+            "role": "system",
+            "content": (
                 "Kamu adalah Dzeck, asisten AI yang membantu. Balas secara alami dan bermanfaat dalam Bahasa Indonesia. "
                 "Gunakan bahasa yang sama dengan user jika user menggunakan bahasa lain. "
                 "Jangan keluarkan JSON — balas dengan teks biasa saja."
-            )},
-            {"role": "user", "content": user_message},
-        ]
+            ),
+        }
+        messages: List[Dict[str, Any]] = [sys_msg]
+        if chat_history:
+            for h in chat_history[-10:]:
+                role = h.get("role", "")
+                content = h.get("content", "")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": str(content)[:2000]})
+        messages.append({"role": "user", "content": user_message})
         try:
             yield make_event("message_start", role="assistant")
             got_any = False
@@ -1419,6 +1440,7 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
         user_message: str,
         attachments: Optional[List[str]] = None,
         resume_from_session: Optional[str] = None,
+        chat_history: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Main async agent flow using AsyncGenerator.
@@ -1433,8 +1455,22 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
         Supports:
         - Session persistence (MongoDB + Redis)
         - Resume from saved session state
+        - Conversation memory (chat_history across messages)
         """
         svc = await self._get_session_service()
+
+        # ── Load / merge chat history ──────────────────────────────────────────
+        loaded_history: List[Dict[str, Any]] = []
+        if self.session_id and svc:
+            try:
+                loaded_history = await svc.load_chat_history(self.session_id) or []
+            except Exception:
+                loaded_history = []
+
+        if chat_history:
+            self.chat_history = chat_history
+        elif loaded_history:
+            self.chat_history = loaded_history
 
         try:
             if resume_from_session and svc:
@@ -1447,15 +1483,38 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                 await svc.create_session(user_message, session_id=self.session_id)
 
             if not attachments and self._is_simple_query(user_message):
-                async for event in self.respond_directly_async(user_message):
+                assistant_reply = []
+
+                async def _collect_and_yield():
+                    async for event in self.respond_directly_async(
+                        user_message, chat_history=self.chat_history
+                    ):
+                        if event.get("type") == "message_chunk":
+                            assistant_reply.append(event.get("chunk", ""))
+                        yield event
+
+                async for event in _collect_and_yield():
                     yield event
+
+                reply_text = "".join(assistant_reply)
+                if reply_text:
+                    self.chat_history.append({"role": "user", "content": user_message})
+                    self.chat_history.append({"role": "assistant", "content": reply_text})
+                    if self.session_id and svc:
+                        try:
+                            await svc.save_chat_history(self.session_id, self.chat_history[-40:])
+                        except Exception:
+                            pass
+
                 yield make_event("done", success=True, session_id=self.session_id)
                 return
 
             self.state = FlowState.PLANNING
             yield make_event("plan", status=PlanStatus.CREATING.value)
 
-            self.plan = await self.run_planner_async(user_message, attachments)
+            self.plan = await self.run_planner_async(
+                user_message, attachments, chat_history=self.chat_history
+            )
 
             if self.session_id and svc:
                 await svc.save_plan_snapshot(self.session_id, self.plan.to_dict())
@@ -1511,10 +1570,29 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
             yield make_event("plan", status=PlanStatus.COMPLETED.value,
                              plan=safe_plan_dict(self.plan))
 
-            async for event in self.summarize_async(self.plan, user_message):
+            summary_chunks: List[str] = []
+
+            async def _summarize_and_collect():
+                async for event in self.summarize_async(self.plan, user_message):
+                    if event.get("type") == "message_chunk":
+                        summary_chunks.append(event.get("chunk", ""))
+                    yield event
+
+            async for event in _summarize_and_collect():
                 yield event
 
             self.state = FlowState.COMPLETED
+
+            # Save chat history after plan-act completion
+            summary_text = "".join(summary_chunks)
+            if summary_text:
+                self.chat_history.append({"role": "user", "content": user_message})
+                self.chat_history.append({"role": "assistant", "content": summary_text})
+                if self.session_id and svc:
+                    try:
+                        await svc.save_chat_history(self.session_id, self.chat_history[-40:])
+                    except Exception:
+                        pass
 
             if self.session_id and svc:
                 await svc.complete_session(self.session_id, success=True)
@@ -1545,6 +1623,7 @@ async def run_agent_async(
     attachments: Optional[List[str]] = None,
     session_id: Optional[str] = None,
     resume_from_session: Optional[str] = None,
+    chat_history: Optional[List[Dict[str, Any]]] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Public entry point for running the agent as an async generator.
@@ -1555,6 +1634,7 @@ async def run_agent_async(
         user_message,
         attachments=attachments,
         resume_from_session=resume_from_session,
+        chat_history=chat_history,
     ):
         yield event
 
@@ -1589,12 +1669,27 @@ def main() -> None:
             sys.stdout.flush()
             return
 
+        # Build chat_history from messages array (exclude the last user message — it's user_message)
+        chat_history: List[Dict[str, Any]] = []
+        if messages:
+            for m in messages:
+                role = m.get("role", "")
+                content = m.get("content", "")
+                if role in ("user", "assistant") and content:
+                    chat_history.append({"role": role, "content": content})
+            # Remove the last user message (it's user_message, avoid duplication)
+            if chat_history and chat_history[-1].get("role") == "user":
+                last_content = chat_history[-1].get("content", "")
+                if last_content.strip() == user_message.strip():
+                    chat_history = chat_history[:-1]
+
         async def _run():
             async for event in run_agent_async(
                 user_message,
                 attachments=attachments or [],
                 session_id=session_id,
                 resume_from_session=resume_from_session,
+                chat_history=chat_history or None,
             ):
                 line = json.dumps(event, default=str)
                 sys.stdout.write(line + "\n")
