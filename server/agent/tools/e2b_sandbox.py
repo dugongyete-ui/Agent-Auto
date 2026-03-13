@@ -279,14 +279,17 @@ def read_file_bytes(path: str) -> Optional[bytes]:
 
 
 def list_output_files() -> list:
-    """List files in the E2B sandbox output directory."""
+    """List files in the E2B sandbox output directory. Returns full absolute paths."""
     sb = get_sandbox()
     if sb is None:
         return []
     try:
         result = sb.commands.run("ls -1 /home/user/dzeck-ai/output/ 2>/dev/null || echo ''", timeout=10)
         stdout = getattr(result, "stdout", "") or ""
-        return [f.strip() for f in stdout.strip().split("\n") if f.strip()]
+        return [
+            "{}/{}".format(OUTPUT_DIR, f.strip())
+            for f in stdout.strip().split("\n") if f.strip()
+        ]
     except Exception:
         return []
 

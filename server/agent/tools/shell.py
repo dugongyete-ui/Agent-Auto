@@ -395,10 +395,21 @@ def _check_repeated_error(command: str, error_output: str) -> Optional[str]:
     if not error_output or not error_output.strip():
         return None
     prefix = _session_error_prefix()
-    error_key = f"{prefix}{command}::{error_output[:200]}"
+    error_sig = error_output.strip()[:200]
+    error_key = f"{prefix}{command}::{error_sig}"
     with _recent_errors_lock:
         _recent_errors[error_key] = _recent_errors.get(error_key, 0) + 1
         count = _recent_errors[error_key]
+        if len(_recent_errors) > 200:
+            oldest = list(_recent_errors.keys())[:50]
+            for k in oldest:
+                _recent_errors.pop(k, None)
+    if count >= 3:
+        return (
+            f"\n🛑 REPEATED ERROR BLOCKED ({count} times): This exact error has occurred {count} times. "
+            f"You MUST completely change your approach — do NOT retry with the same command or similar strategy. "
+            f"Consider: different library, different algorithm, skip this step, or ask the user."
+        )
     if count >= 2:
         return (
             f"\n⚠️ REPEATED ERROR DETECTED ({count} times): This exact error has occurred before. "
@@ -409,16 +420,16 @@ def _check_repeated_error(command: str, error_output: str) -> Optional[str]:
 
 
 def _check_repeated_command_prerun(command: str) -> Optional[ToolResult]:
-    """Block execution of a command that has failed with the same error 2+ times (session-scoped)."""
+    """Block execution of a command that has failed with the same error 3+ times (session-scoped)."""
     prefix = _session_error_prefix()
     with _recent_errors_lock:
         for key, count in _recent_errors.items():
-            if key.startswith(f"{prefix}{command}::") and count >= 2:
+            if key.startswith(f"{prefix}{command}::") and count >= 3:
                 msg = (
-                    f"[Shell] BLOCKED: identical command/error seen before — change approach entirely. "
-                    f"This command has failed {count} times with the same error. "
-                    f"You MUST use a completely different approach. Do NOT retry.\n"
-                    f"Previous error pattern: {key.split('::', 1)[-1][:300]}"
+                    f"[Shell] BLOCKED: identical command/error seen {count} times — change approach entirely. "
+                    f"This command has failed repeatedly with the same error. "
+                    f"You MUST use a completely different approach, different tool, or skip this step.\n"
+                    f"Previous error: {key.split('::', 1)[-1][:300]}"
                 )
                 return ToolResult(
                     success=False,

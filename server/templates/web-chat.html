@@ -326,6 +326,16 @@
     .tool-download a svg{flex-shrink:0;color:var(--accent)}
     .tool-download a span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
 
+    .tool-result-card{margin:4px 0 2px 0;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:12px;background:var(--surface)}
+    .tool-result-header{display:flex;align-items:center;gap:6px;padding:5px 10px;cursor:pointer;user-select:none;color:var(--muted)}
+    .tool-result-header:hover{background:var(--surface2)}
+    .tool-result-label{font-weight:600;white-space:nowrap;flex-shrink:0}
+    .tool-result-preview{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:11px}
+    .tool-result-chev{transition:transform .2s;font-size:10px;flex-shrink:0}
+    .tool-result-card.open .tool-result-chev{transform:rotate(90deg)}
+    .tool-result-body{display:none;margin:0;padding:8px 10px;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-size:11px;font-family:'JetBrains Mono',monospace;background:var(--surface2);color:var(--text);border-top:1px solid var(--border)}
+    .tool-result-card.open .tool-result-body{display:block}
+
     /* Plan bar */
     #plan-bar{display:none;background:var(--surface);border:1px solid var(--border);border-radius:11px;
       margin:6px 16px;padding:9px 12px;box-shadow:var(--shadow)}
@@ -1383,12 +1393,23 @@ function updateToolChip(tcId, evt) {
         panelPre.appendChild(outSpan);
         panelPre.scrollTop = panelPre.scrollHeight;
       }
+      if (shellOut.length > 200) {
+        const parent = chip.parentElement;
+        if (parent && !document.getElementById(`rc-${tcId}`)) {
+          const preview = shellOut.substring(0, 150).replace(/\n/g, ' ');
+          const resultCard = document.createElement('div');
+          resultCard.className = 'tool-result-card';
+          resultCard.id = `rc-${tcId}`;
+          resultCard.innerHTML = `<div class="tool-result-header" onclick="this.parentElement.classList.toggle('open')"><span class="tool-result-label">${err?'❌':'✓'} Output</span><span class="tool-result-preview">${esc(preview)}…</span><span class="tool-result-chev">›</span></div><pre class="tool-result-body">${esc(shellOut.substring(0, 4000))}</pre>`;
+          parent.appendChild(resultCard);
+        }
+      }
     }
   }
   if (tc?.type==='search') {
     const panelPre = document.getElementById('tp-term-output');
+    const results = tc.results || [];
     if (panelPre) {
-      const results = tc.results || [];
       if (results.length > 0) {
         results.forEach((r, i) => {
           const resultSpan = document.createElement('span');
@@ -1403,6 +1424,18 @@ function updateToolChip(tcId, evt) {
         panelPre.appendChild(noSpan);
       }
       panelPre.scrollTop = panelPre.scrollHeight;
+    }
+    if (results.length > 0) {
+      const parent = chip.parentElement;
+      if (parent && !document.getElementById(`rc-${tcId}`)) {
+        const preview = results.map((r,i)=>`${i+1}. ${r.title||''}`).join(', ');
+        const body = results.map((r,i)=>`${i+1}. ${r.title || 'Untitled'}\n   ${r.url || ''}\n   ${(r.snippet || '').substring(0, 200)}`).join('\n\n');
+        const resultCard = document.createElement('div');
+        resultCard.className = 'tool-result-card';
+        resultCard.id = `rc-${tcId}`;
+        resultCard.innerHTML = `<div class="tool-result-header" onclick="this.parentElement.classList.toggle('open')"><span class="tool-result-label">🔍 ${results.length} hasil</span><span class="tool-result-preview">${esc(preview.substring(0,120))}</span><span class="tool-result-chev">›</span></div><pre class="tool-result-body">${esc(body)}</pre>`;
+        parent.appendChild(resultCard);
+      }
     }
   }
 
@@ -2437,7 +2470,7 @@ async function doSend(text, attachments) {
         if (!line.startsWith('data: ')) continue;
         const d = line.slice(6).trim();
         if (d==='[DONE]') { finalize(); return; }
-        try { handleEvent(JSON.parse(d)); } catch {}
+        try { handleEvent(JSON.parse(d)); } catch (e) { console.warn('[SSE parse]', d.substring(0, 100), e); }
       }
     }
     finalize();

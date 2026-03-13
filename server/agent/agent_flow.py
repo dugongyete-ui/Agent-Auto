@@ -1547,6 +1547,11 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                         first_pending = i
                         break
                 if first_pending is not None and new_steps:
+                    seen_ids = {s.id for s in plan.steps[:first_pending]}
+                    for idx, ns in enumerate(new_steps):
+                        while ns.id in seen_ids or not ns.id:
+                            ns.id = "step_{}_{}".format(first_pending + idx + 1, int(time.time()) % 10000)
+                        seen_ids.add(ns.id)
                     plan.steps = plan.steps[:first_pending] + new_steps
                 return make_event("plan", status=PlanStatus.UPDATED.value, plan=safe_plan_dict(plan))
         except Exception as e:
@@ -1925,6 +1930,8 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
 
             step_waiting = False
             _step_consecutive_failures: Dict[str, int] = {}
+            _global_consecutive_failures = 0
+            _MAX_GLOBAL_FAILURES = 4
             while True:
                 step = self.plan.get_next_step()
                 if not step:
@@ -1936,11 +1943,15 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                         step_waiting = True
                     yield event
 
-                # Step retry: if step failed, retry once with error context injected
                 if not step_waiting and step.status == ExecutionStatus.FAILED:
+                    _global_consecutive_failures += 1
                     fail_count = _step_consecutive_failures.get(step.id, 0) + 1
                     _step_consecutive_failures[step.id] = fail_count
-                    if fail_count < 2:
+                    if _global_consecutive_failures >= _MAX_GLOBAL_FAILURES:
+                        sys.stderr.write("[agent] Circuit breaker: {} consecutive failures, aborting plan\n".format(_global_consecutive_failures))
+                        yield make_event("notify", text="Terlalu banyak kegagalan berturut-turut. Menghentikan eksekusi.")
+                        break
+                    elif fail_count < 2:
                         error_ctx = step.result or step.error or "Unknown failure"
                         retry_msg = (
                             f"{user_message}\n\n"
@@ -1957,7 +1968,8 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                             yield event
                     else:
                         _step_consecutive_failures.pop(step.id, None)
-                else:
+                elif not step_waiting:
+                    _global_consecutive_failures = 0
                     _step_consecutive_failures.pop(step.id, None)
 
                 if not step_waiting and self.session_id and svc:

@@ -186,7 +186,9 @@ export async function registerRoutes(app: any): Promise<Server> {
           const parsed = JSON.parse(line);
           if (parsed.type === "done") { doneSent = true; res.write("data: [DONE]\n\n"); }
           else res.write(`data: ${JSON.stringify(parsed)}\n\n`);
-        } catch {}
+        } catch (parseErr) {
+          console.error("[SSE parse error] Failed to parse line:", line.substring(0, 200), parseErr);
+        }
       }
     });
 
