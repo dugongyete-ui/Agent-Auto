@@ -44,26 +44,28 @@ class Memory:
             self._messages.pop()
 
     def compact(self) -> None:
-        """Compact memory by removing large tool results.
-        
-        Ported from ai-manus: removes large content from tool results
-        (browser_view, browser_navigate, file_read, web_browse) to save
-        context window space. Replaces with truncated summaries.
+        """Compact memory by removing large browser tool results.
+
+        Mirrors ai-manus compact_memory approach: only removes heavy browser
+        content (browser_view / browser_navigate / web_browse) which can be
+        massive HTML dumps. File write and shell exec results are PRESERVED
+        in full so the agent retains critical path and execution context.
         """
-        large_tool_names = {
+        browser_tool_names = {
             "browser_view", "browser_navigate", "web_browse",
-            "file_read", "web_search", "shell_exec"
+            "browser_click", "browser_input", "browser_scroll_up",
+            "browser_scroll_down", "browser_console_exec",
         }
-        max_content_len = 500
+        max_browser_len = 300
 
         compacted: List[Dict[str, Any]] = []
         for msg in self._messages:
             if msg.get("role") == "tool":
                 tool_name = msg.get("tool_name", "")
                 content = msg.get("content", "")
-                if tool_name in large_tool_names and len(str(content)) > max_content_len:
+                if tool_name in browser_tool_names and len(str(content)) > max_browser_len:
                     msg = dict(msg)
-                    msg["content"] = str(content)[:max_content_len] + "\n[Content compacted to save context...]"
+                    msg["content"] = str(content)[:max_browser_len] + "\n[browser content removed]"
             compacted.append(msg)
         self._messages = compacted
 

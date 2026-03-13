@@ -520,36 +520,53 @@ def _coerce_bool(value: Any, default: bool = True) -> bool:
 
 
 def _compact_exec_messages(messages: list) -> list:
-    """Compact exec_messages when they exceed 12 messages to prevent token overflow.
-    Keeps: [0] system prompt, [1] initial user prompt, last 4 messages, + compressed middle summary.
+    """Compact exec_messages when they exceed 16 messages to prevent token overflow.
+
+    Inspired by ai-manus compact_memory approach:
+    - Keeps system prompt + initial user prompt ALWAYS (full context)
+    - Keeps last 6 messages ALWAYS (most recent context)
+    - Middle messages: truncate BROWSER content (huge HTML), keep FILE/SHELL results (agent needs paths)
+    - Never truncate file_write results — agent must track which files it created and where
     """
-    if len(messages) <= 12:
+    if len(messages) <= 16:
         return messages
+
     system_msg = messages[0]
     first_user_msg = messages[1] if len(messages) > 1 else None
-    last_4 = messages[-4:]
-    middle = messages[2:-4] if len(messages) > 6 else []
+    last_6 = messages[-6:]
+    middle = messages[2:-6] if len(messages) > 8 else []
     if not middle:
         return messages
-    # Build a compressed summary of the middle messages
-    summary_lines = []
+
+    compacted_middle = []
     for msg in middle:
         role = msg.get("role", "")
-        content = str(msg.get("content", ""))[:300]
-        summary_lines.append(f"[{role}]: {content}")
-    compressed = {
-        "role": "user",
-        "content": (
-            "[CONTEXT SUMMARY - previous tool calls compressed to save tokens]\n"
-            + "\n".join(summary_lines)
-            + "\n[END SUMMARY - continue from here]"
-        ),
-    }
+        content = str(msg.get("content", ""))
+
+        is_browser_result = any(kw in content for kw in [
+            "browser_navigate", "browser_view", "browser_click",
+            "<html", "<!DOCTYPE", "document.querySelector",
+        ])
+        is_file_write = "file_write" in content or "Wrote file" in content or "File written" in content
+        is_shell_result = "return_code:" in content or "stdout:" in content
+
+        if is_browser_result and not is_file_write:
+            truncated = content[:200] + "...[browser content truncated]" if len(content) > 200 else content
+            compacted_middle.append({"role": role, "content": truncated})
+        elif is_file_write:
+            compacted_middle.append(msg)
+        elif is_shell_result:
+            truncated = content[:800] + "...[truncated]" if len(content) > 800 else content
+            compacted_middle.append({"role": role, "content": truncated})
+        else:
+            truncated = content[:400] + "...[truncated]" if len(content) > 400 else content
+            compacted_middle.append({"role": role, "content": truncated})
+
     result = [system_msg]
     if first_user_msg:
         result.append(first_user_msg)
-    result.append(compressed)
-    result.extend(last_4)
+    result.extend(compacted_middle)
+    result.extend(last_6)
     return result
 
 
@@ -1082,7 +1099,7 @@ class DzeckAgent:
                 )
                 sb = get_sandbox()
                 cmd = _args.get("command", "")
-                workdir = _args.get("exec_dir", "/home/user/dzeck-ai")
+                workdir = _args.get("exec_dir", "") or "/home/user/dzeck-ai"
                 timeout_s = _args.get("timeout", 90)
                 if not sb:
                     return execute_tool(_res, _args)

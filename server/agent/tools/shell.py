@@ -54,11 +54,11 @@ def _shell_quote(s: str) -> str:
     return shlex.quote(s)
 
 
-def _run_e2b(command: str, exec_dir: str = "", timeout: int = 90) -> Dict[str, Any]:
+def _run_e2b(command: str, exec_dir: str = "/home/user/dzeck-ai", timeout: int = 90) -> Dict[str, Any]:
     """Execute command via E2B cloud sandbox. Auto-ensures workspace dir exists."""
     try:
-        from server.agent.tools.e2b_sandbox import run_command, get_session_workspace
-        effective_dir = exec_dir if exec_dir else get_session_workspace()
+        from server.agent.tools.e2b_sandbox import run_command, WORKSPACE_DIR
+        effective_dir = exec_dir or WORKSPACE_DIR
         return run_command(command, workdir=effective_dir, timeout=timeout)
     except Exception as e:
         return {"success": False, "stdout": "", "stderr": str(e), "exit_code": -1}
@@ -236,7 +236,7 @@ def _extract_output_paths_from_command(command: str) -> list:
     return unique
 
 
-def _preflight_ensure_scripts(command: str, exec_dir: str = "") -> Optional[str]:
+def _preflight_ensure_scripts(command: str, exec_dir: str = "/home/user/dzeck-ai") -> Optional[str]:
     """Before executing a python script command in E2B, ensure the script file exists in the sandbox.
     Returns an error message string if the file cannot be ensured, or None on success."""
     if not E2B_ENABLED:
@@ -247,11 +247,10 @@ def _preflight_ensure_scripts(command: str, exec_dir: str = "") -> Optional[str]
         return None
     script_path = match.group(1)
     try:
-        from server.agent.tools.e2b_sandbox import ensure_file_in_sandbox, WORKSPACE_DIR, get_cached_file_path, get_session_workspace
+        from server.agent.tools.e2b_sandbox import ensure_file_in_sandbox, WORKSPACE_DIR, get_cached_file_path
         import os as _os
-        effective_dir = exec_dir if exec_dir else get_session_workspace()
         if not script_path.startswith("/"):
-            resolved_exec = _os.path.normpath(_os.path.join(effective_dir or WORKSPACE_DIR, script_path))
+            resolved_exec = _os.path.normpath(_os.path.join(exec_dir or WORKSPACE_DIR, script_path))
             resolved_ws = _os.path.normpath(_os.path.join(WORKSPACE_DIR, script_path))
             cached_exec = get_cached_file_path(resolved_exec)
             cached_ws = get_cached_file_path(resolved_ws) if resolved_ws != resolved_exec else None
@@ -437,14 +436,9 @@ def _check_error_in_output(stdout: str, stderr: str) -> bool:
     return any(indicator in combined for indicator in error_indicators)
 
 
-def shell_exec(command: str, exec_dir: str = "", id: str = "default") -> ToolResult:
+def shell_exec(command: str, exec_dir: str = "/home/user/dzeck-ai", id: str = "default") -> ToolResult:
     """Execute a shell command. Uses E2B cloud sandbox when available, refuses local execution."""
-    if not exec_dir:
-        try:
-            from server.agent.tools.e2b_sandbox import get_session_workspace
-            exec_dir = get_session_workspace()
-        except Exception:
-            exec_dir = "/home/user/dzeck-ai"
+    exec_dir = exec_dir or "/home/user/dzeck-ai"
 
     gui_detected = _is_gui_command(command)
     if gui_detected:
