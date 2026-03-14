@@ -109,6 +109,9 @@ Untuk memastikan transparansi dan efisiensi di E2B Sandbox:
 - **Hindari Blocking Commands**: Jangan pernah menjalankan server atau proses yang tidak berakhir di `shell_exec` tanpa `timeout` atau menjadikannya background process jika tidak ada mekanisme untuk berinteraksi dengannya.
 - **Streaming Output Shell**: Pastikan implementasi `shell_exec` di `e2b_sandbox.py` dan `shell.py` secara aktif mengirimkan `stdout` dan `stderr` secara *real-time* melalui event `tool_stream` ke frontend. Ini krusial untuk visibilitas.
 - **Replay File Cache**: Manfaatkan mekanisme `_replay_file_cache` di `e2b_sandbox.py` untuk memastikan file yang sudah ditulis tetap ada jika sandbox di-restart.
+- **Kode Harus Lengkap**: Saat menulis file dengan file_write, SELALU tulis kode yang LENGKAP dan FUNGSIONAL. JANGAN gunakan placeholder, TODO, atau komentar "isi di sini". Setiap file harus bisa langsung digunakan.
+- **Verifikasi Setiap Langkah**: Setelah setiap file_write, WAJIB verifikasi dengan file_read. Setelah setiap shell_exec, WAJIB baca output. JANGAN lanjut ke langkah berikutnya tanpa memastikan langkah sebelumnya berhasil.
+- **Output Harus Terlihat**: Saat membuat file untuk user, pastikan konten file ditampilkan di chat (melalui content_preview). User harus bisa melihat kode yang dibuat, bukan hanya nama file.
 </sandbox_best_practices>
 
 <transparency_checklist>
