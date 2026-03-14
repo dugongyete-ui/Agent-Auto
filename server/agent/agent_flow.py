@@ -1113,6 +1113,13 @@ class DzeckAgent:
             step.success = False
             step.result = "Menunggu jawaban user: " + (text[:200] if text else "")
             yield make_event("step", status=StepStatus.PENDING.value, step=step.to_dict())
+            # Emit accurate plan snapshot so frontend knows exact state of all steps
+            if hasattr(self, 'plan') and self.plan:
+                # Reset any "running" steps back to pending for accurate visual
+                for _s in self.plan.steps:
+                    if _s.status == ExecutionStatus.RUNNING and _s.id != step.id:
+                        _s.status = ExecutionStatus.PENDING
+                yield make_event("plan", status=PlanStatus.WAITING.value, plan=safe_plan_dict(self.plan))
             yield make_event("waiting_for_user", text=text or "Menunggu balasan Anda...")
             yield {"type": "__step_done__"}
             return
@@ -1914,6 +1921,11 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                             await svc.save_step_completed(self.session_id, step.to_dict())
 
                         if step_waiting:
+                            # Emit accurate plan snapshot before saving waiting state
+                            for _s in self.plan.steps:
+                                if _s.status == ExecutionStatus.RUNNING:
+                                    _s.status = ExecutionStatus.PENDING
+                            yield make_event("plan", status=PlanStatus.WAITING.value, plan=safe_plan_dict(self.plan))
                             pending = [s.to_dict() for s in self.plan.steps if not s.is_done()]
                             if self.session_id:
                                 if svc:
@@ -2115,6 +2127,11 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                     await svc.save_step_completed(self.session_id, step.to_dict())
 
                 if step_waiting:
+                    # Emit accurate plan snapshot before saving waiting state
+                    for _s in self.plan.steps:
+                        if _s.status == ExecutionStatus.RUNNING:
+                            _s.status = ExecutionStatus.PENDING
+                    yield make_event("plan", status=PlanStatus.WAITING.value, plan=safe_plan_dict(self.plan))
                     pending = [s.to_dict() for s in self.plan.steps if not s.is_done()]
                     if self.session_id:
                         if svc:

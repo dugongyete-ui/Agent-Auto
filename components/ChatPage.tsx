@@ -141,7 +141,7 @@ export function ChatPage({
         setMessages(prev => prev.map(m =>
           m.id === planMsgIdRef.current ? { ...m, plan: mergedPlan } : m
         ));
-        if (planStatus === "completed") {
+        if (planStatus === "completed" || planStatus === "waiting") {
           setThinking({ active: false, label: "" });
         }
       } else if (!planData) {
@@ -259,6 +259,17 @@ export function ChatPage({
       isWaitingRef.current = true;
       setIsWaitingForUser(true);
       setThinking({ active: false, label: "" });
+      // Reset any visually "running" steps back to "pending" in the plan
+      if (currentPlanRef.current && planMsgIdRef.current) {
+        const resetSteps = currentPlanRef.current.steps.map(s =>
+          s.status === "running" ? { ...s, status: "pending" as const } : s
+        );
+        const resetPlan = { ...currentPlanRef.current, steps: resetSteps };
+        currentPlanRef.current = resetPlan;
+        setMessages(prev => prev.map(m =>
+          m.id === planMsgIdRef.current ? { ...m, plan: resetPlan } : m
+        ));
+      }
       return;
     }
 

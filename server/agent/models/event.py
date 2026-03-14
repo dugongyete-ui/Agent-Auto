@@ -18,6 +18,7 @@ class PlanStatus(str, Enum):
     UPDATING = "updating"
     UPDATED = "updated"
     RUNNING = "running"
+    WAITING = "waiting"
     COMPLETED = "completed"
     FAILED = "failed"
 
