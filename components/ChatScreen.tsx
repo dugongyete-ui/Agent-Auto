@@ -16,7 +16,7 @@ import { ChatInput } from "./ChatInput";
 import { useChat, Message } from "@/lib/useChat";
 
 export function ChatScreen() {
-  const { messages, isLoading, error, sendMessage, stop, clear } = useChat();
+  const { messages, isLoading, isWaitingForUser, error, sendMessage, stop, clear } = useChat();
   const [isAgentMode, setIsAgentMode] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
@@ -123,11 +123,21 @@ export function ChatScreen() {
         />
 
         {/* Loading indicator */}
-        {isLoading && (
+        {isLoading && !isWaitingForUser && (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color="#6C5CE7" />
             <Text style={styles.loadingText}>
               {isAgentMode ? "Agent is working..." : "Thinking..."}
+            </Text>
+          </View>
+        )}
+
+        {/* Waiting for user indicator */}
+        {isWaitingForUser && (
+          <View style={styles.loadingContainer}>
+            <Ionicons name="chatbubble-ellipses-outline" size={16} color="#6C5CE7" />
+            <Text style={styles.loadingText}>
+              Agent is waiting for your reply...
             </Text>
           </View>
         )}
@@ -143,16 +153,18 @@ export function ChatScreen() {
         {/* Input */}
         <ChatInput
           onSend={handleSend}
-          disabled={false}
+          disabled={isLoading && !isWaitingForUser}
           onStop={handleStop}
-          isGenerating={isLoading}
+          isGenerating={isLoading && !isWaitingForUser}
           isAgentMode={isAgentMode}
           onToggleMode={() => setIsAgentMode(!isAgentMode)}
           showModeToggle={true}
           placeholder={
-            isAgentMode
-              ? "Tell Dzeck what to do..."
-              : "Ask Dzeck anything..."
+            isWaitingForUser
+              ? "Type your reply..."
+              : isAgentMode
+                ? "Tell Dzeck what to do..."
+                : "Ask Dzeck anything..."
           }
         />
       </KeyboardAvoidingView>

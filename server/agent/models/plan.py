@@ -49,11 +49,16 @@ class Plan(BaseModel):
     status: ExecutionStatus = ExecutionStatus.PENDING
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    current_step_id: Optional[str] = None
 
     def is_done(self) -> bool:
         return self.status in (ExecutionStatus.COMPLETED, ExecutionStatus.FAILED)
 
     def get_next_step(self) -> Optional[Step]:
+        if self.current_step_id:
+            for step in self.steps:
+                if step.id == self.current_step_id and not step.is_done():
+                    return step
         for step in self.steps:
             if not step.is_done():
                 return step
@@ -67,4 +72,4 @@ class Plan(BaseModel):
         return cls(**data)
 
     def dump_json(self) -> str:
-        return self.model_dump_json(include={"goal", "language", "steps"})
+        return self.model_dump_json(include={"goal", "language", "steps", "current_step_id"})

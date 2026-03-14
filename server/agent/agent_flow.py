@@ -1760,6 +1760,12 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                     self.plan = Plan.from_dict(waiting_state["plan"])
                     original_user_message = waiting_state.get("user_message", user_message)
 
+                    saved_step_id = self.plan.current_step_id
+                    if saved_step_id:
+                        for s in self.plan.steps:
+                            if s.id == saved_step_id and s.status == ExecutionStatus.PENDING:
+                                s.status = ExecutionStatus.RUNNING
+
                     yield make_event("plan", status=PlanStatus.RUNNING.value, plan=safe_plan_dict(self.plan))
 
                     step_waiting = False
@@ -1768,6 +1774,7 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                         if not step:
                             break
 
+                        self.plan.current_step_id = step.id
                         step_waiting = False
                         async for event in self.execute_step_async(self.plan, step, original_user_message, user_reply=user_message):
                             if event.get("type") == "waiting_for_user":
@@ -1798,7 +1805,8 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                                         "user_message": original_user_message,
                                         "chat_history": self.chat_history,
                                     })
-                            break
+                            yield make_event("done", success=True, session_id=self.session_id)
+                            return
 
                         next_step = self.plan.get_next_step()
                         if next_step:
@@ -1808,42 +1816,41 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                             if plan_event:
                                 yield plan_event
 
-                    if not step_waiting:
-                        for s in self.plan.steps:
-                            if s.status == ExecutionStatus.RUNNING:
-                                s.status = ExecutionStatus.FAILED
-                                s.success = False
-                                if not s.result:
-                                    s.result = "Step did not complete"
-                                yield make_event("step", status=StepStatus.FAILED.value, step=s.to_dict())
+                    for s in self.plan.steps:
+                        if s.status == ExecutionStatus.RUNNING:
+                            s.status = ExecutionStatus.FAILED
+                            s.success = False
+                            if not s.result:
+                                s.result = "Step did not complete"
+                            yield make_event("step", status=StepStatus.FAILED.value, step=s.to_dict())
 
-                        self.plan.status = ExecutionStatus.COMPLETED
-                        yield make_event("plan", status=PlanStatus.COMPLETED.value,
-                                         plan=safe_plan_dict(self.plan))
+                    self.plan.status = ExecutionStatus.COMPLETED
+                    yield make_event("plan", status=PlanStatus.COMPLETED.value,
+                                     plan=safe_plan_dict(self.plan))
 
-                        summary_chunks: List[str] = []
-                        async def _summarize_cont():
-                            async for event in self.summarize_async(self.plan, original_user_message):
-                                if event.get("type") == "message_chunk":
-                                    summary_chunks.append(event.get("chunk", ""))
-                                yield event
-                        async for event in _summarize_cont():
+                    summary_chunks: List[str] = []
+                    async def _summarize_cont():
+                        async for event in self.summarize_async(self.plan, original_user_message):
+                            if event.get("type") == "message_chunk":
+                                summary_chunks.append(event.get("chunk", ""))
                             yield event
+                    async for event in _summarize_cont():
+                        yield event
 
-                        self.state = FlowState.COMPLETED
-                        summary_text = "".join(summary_chunks)
-                        if summary_text:
-                            self.chat_history.append({"role": "user", "content": original_user_message})
-                            self.chat_history.append({"role": "assistant", "content": summary_text})
-                            if self.session_id and svc:
-                                try:
-                                    await svc.save_chat_history(self.session_id, self.chat_history[-40:])
-                                except Exception:
-                                    pass
+                    self.state = FlowState.COMPLETED
+                    summary_text = "".join(summary_chunks)
+                    if summary_text:
+                        self.chat_history.append({"role": "user", "content": original_user_message})
+                        self.chat_history.append({"role": "assistant", "content": summary_text})
                         if self.session_id and svc:
-                            await svc.complete_session(self.session_id, success=True)
-                        if self._created_files:
-                            yield make_event("files", files=self._created_files)
+                            try:
+                                await svc.save_chat_history(self.session_id, self.chat_history[-40:])
+                            except Exception:
+                                pass
+                    if self.session_id and svc:
+                        await svc.complete_session(self.session_id, success=True)
+                    if self._created_files:
+                        yield make_event("files", files=self._created_files)
 
                     yield make_event("done", success=True, session_id=self.session_id)
                     return
@@ -1937,6 +1944,7 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                 if not step:
                     break
 
+                self.plan.current_step_id = step.id
                 step_waiting = False
                 async for event in self.execute_step_async(self.plan, step, user_message):
                     if event.get("type") == "waiting_for_user":
@@ -1996,7 +2004,8 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                                 "user_message": user_message,
                                 "chat_history": self.chat_history,
                             })
-                    break
+                    yield make_event("done", success=True, session_id=self.session_id)
+                    return
 
                 next_step = self.plan.get_next_step()
                 if next_step:
@@ -2006,47 +2015,46 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                     if plan_event:
                         yield plan_event
 
-            if not step_waiting:
-                for s in self.plan.steps:
-                    if s.status == ExecutionStatus.RUNNING:
-                        s.status = ExecutionStatus.FAILED
-                        s.success = False
-                        if not s.result:
-                            s.result = "Step did not complete"
-                        yield make_event("step", status=StepStatus.FAILED.value, step=s.to_dict())
+            for s in self.plan.steps:
+                if s.status == ExecutionStatus.RUNNING:
+                    s.status = ExecutionStatus.FAILED
+                    s.success = False
+                    if not s.result:
+                        s.result = "Step did not complete"
+                    yield make_event("step", status=StepStatus.FAILED.value, step=s.to_dict())
 
-                self.plan.status = ExecutionStatus.COMPLETED
-                yield make_event("plan", status=PlanStatus.COMPLETED.value,
-                                 plan=safe_plan_dict(self.plan))
+            self.plan.status = ExecutionStatus.COMPLETED
+            yield make_event("plan", status=PlanStatus.COMPLETED.value,
+                             plan=safe_plan_dict(self.plan))
 
-                summary_chunks: List[str] = []
+            summary_chunks: List[str] = []
 
-                async def _summarize_and_collect():
-                    async for event in self.summarize_async(self.plan, user_message):
-                        if event.get("type") == "message_chunk":
-                            summary_chunks.append(event.get("chunk", ""))
-                        yield event
-
-                async for event in _summarize_and_collect():
+            async def _summarize_and_collect():
+                async for event in self.summarize_async(self.plan, user_message):
+                    if event.get("type") == "message_chunk":
+                        summary_chunks.append(event.get("chunk", ""))
                     yield event
 
-                self.state = FlowState.COMPLETED
+            async for event in _summarize_and_collect():
+                yield event
 
-                summary_text = "".join(summary_chunks)
-                if summary_text:
-                    self.chat_history.append({"role": "user", "content": user_message})
-                    self.chat_history.append({"role": "assistant", "content": summary_text})
-                    if self.session_id and svc:
-                        try:
-                            await svc.save_chat_history(self.session_id, self.chat_history[-40:])
-                        except Exception:
-                            pass
+            self.state = FlowState.COMPLETED
 
+            summary_text = "".join(summary_chunks)
+            if summary_text:
+                self.chat_history.append({"role": "user", "content": user_message})
+                self.chat_history.append({"role": "assistant", "content": summary_text})
                 if self.session_id and svc:
-                    await svc.complete_session(self.session_id, success=True)
+                    try:
+                        await svc.save_chat_history(self.session_id, self.chat_history[-40:])
+                    except Exception:
+                        pass
 
-                if self._created_files:
-                    yield make_event("files", files=self._created_files)
+            if self.session_id and svc:
+                await svc.complete_session(self.session_id, success=True)
+
+            if self._created_files:
+                yield make_event("files", files=self._created_files)
 
             yield make_event("done", success=True, session_id=self.session_id)
 

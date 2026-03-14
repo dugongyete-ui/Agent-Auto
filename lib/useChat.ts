@@ -14,8 +14,10 @@ export interface Message {
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isWaitingForUser, setIsWaitingForUser] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancelRef = useRef<(() => void) | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
   const addMessage = useCallback((message: Message) => {
     setMessages((prev) => [...prev, message]);
@@ -32,9 +34,7 @@ export function useChat() {
       if (!text.trim()) return;
 
       setError(null);
-      setIsLoading(true);
 
-      // Add user message
       const userMessage: Message = {
         id: `msg-${Date.now()}`,
         type: "user",
@@ -43,12 +43,27 @@ export function useChat() {
       };
       addMessage(userMessage);
 
+      if (isWaitingForUser && sessionIdRef.current) {
+        setIsWaitingForUser(false);
+        setIsLoading(true);
+        try {
+          await handleAgentChat(text, sessionIdRef.current, true);
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : "Unknown error";
+          setError(errorMsg);
+          console.error("Chat error:", err);
+        } finally {
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      setIsLoading(true);
+
       try {
         if (useAgent) {
-          // Use Agent mode with SSE
           await handleAgentChat(text);
         } else {
-          // Use simple chat mode
           await handleSimpleChat(text);
         }
       } catch (err) {
@@ -59,7 +74,7 @@ export function useChat() {
         setIsLoading(false);
       }
     },
-    [addMessage]
+    [addMessage, isWaitingForUser]
   );
 
   const handleSimpleChat = useCallback(
@@ -94,14 +109,20 @@ export function useChat() {
   );
 
   const handleAgentChat = useCallback(
-    async (text: string) => {
+    async (text: string, existingSessionId?: string, isContinuation?: boolean) => {
       return new Promise<void>((resolve, reject) => {
         const onEvent = (event: AgentEvent) => {
           if (event.type === "session") {
-            // Session created
+            if (event.session_id) {
+              sessionIdRef.current = event.session_id;
+            }
             console.log("Session:", event.session_id);
+          } else if (event.type === "done" && event.session_id) {
+            sessionIdRef.current = event.session_id;
+          } else if (event.type === "waiting_for_user") {
+            setIsWaitingForUser(true);
+            setIsLoading(false);
           } else if (event.type === "message") {
-            // Assistant message
             const assistantMessage: Message = {
               id: `msg-${Date.now()}`,
               type: "assistant",
@@ -110,7 +131,6 @@ export function useChat() {
             };
             addMessage(assistantMessage);
           } else if (event.type === "tool") {
-            // Tool usage
             const toolMessage: Message = {
               id: `msg-${Date.now()}`,
               type: "tool",
@@ -122,7 +142,6 @@ export function useChat() {
             };
             addMessage(toolMessage);
           } else if (event.type === "step") {
-            // Step/plan
             const stepMessage: Message = {
               id: `msg-${Date.now()}`,
               type: "step",
@@ -145,7 +164,12 @@ export function useChat() {
 
         try {
           apiService.agent(
-            { message: text, messages: [] },
+            {
+              message: text,
+              messages: [],
+              session_id: existingSessionId || undefined,
+              is_continuation: isContinuation || false,
+            },
             { onMessage: onEvent, onError, onDone: onComplete }
           ).then((cancel) => {
             cancelRef.current = cancel;
@@ -174,6 +198,7 @@ export function useChat() {
   return {
     messages,
     isLoading,
+    isWaitingForUser,
     error,
     sendMessage,
     stop,
