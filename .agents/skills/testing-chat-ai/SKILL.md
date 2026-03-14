@@ -63,5 +63,5 @@ The Yqcloud provider is a free/community provider and may have intermittent avai
 ### No Authentication Required
 The app has no login/auth system - just open the URL and start chatting.
 
-## Devin Secrets Needed
+## Dzeck Secrets Needed
 None - the app uses the free g4f library with no API keys required.

@@ -19,7 +19,7 @@
 2. Run `npm install` for Node.js dependencies
 3. Run `pip3 install -r requirements.txt` for Python dependencies
 
-### Devin Secrets Needed
+### Dzeck Secrets Needed
 - `CF_API_KEY` - Cloudflare Workers AI API key
 - `E2B_API_KEY` - E2B sandbox API key
 - `MONGODB_URI` - MongoDB connection string

@@ -3,7 +3,7 @@
 ## Overview
 This is a React Native/Expo chat application with a Node.js Express backend that proxies to Cloudflare Workers AI. It has two modes: Chat (direct LLM streaming) and Agent (Python-based tool execution).
 
-## Devin Secrets Needed
+## Dzeck Secrets Needed
 - `CF_API_KEY` - Cloudflare Workers AI API key
 - `CF_ACCOUNT_ID` - Cloudflare account ID
 - `CF_GATEWAY_NAME` - Cloudflare gateway name
