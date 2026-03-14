@@ -238,11 +238,21 @@ def file_write(
         if is_deliverable:
             download_url = _register_file_for_download(local_path)
 
-        msg = f"File {operation} successfully: {file} ({len(write_content)} bytes)"
+        content_preview = content[:1000]
+        if len(content) > 1000:
+            content_preview += "\n... (truncated, total {} chars)".format(len(content))
+
+        ext = os.path.splitext(file)[1].lstrip(".") if "." in os.path.basename(file) else ""
+        lang_hint = ext if ext in ("py", "js", "ts", "tsx", "jsx", "html", "css", "json", "yaml", "yml", "sh", "bash", "sql", "md", "xml", "svg", "java", "cpp", "c", "go", "rs", "rb") else ""
+
+        msg = "File {op} successfully: {f} ({b} bytes)".format(op=operation, f=file, b=len(write_content))
         if _e2b_enabled and e2b_ok:
             msg += "\n✅ File tersimpan di E2B sandbox (tidak di project lokal)."
         if is_deliverable and download_url:
             msg += "\n📎 File siap didownload."
+        msg += "\n\nContent preview:\n```{lang}\n{preview}\n```".format(
+            lang=lang_hint, preview=content_preview
+        )
 
         return ToolResult(
             success=True,
@@ -255,6 +265,7 @@ def file_write(
                 "download_url": download_url,
                 "filename": os.path.basename(file),
                 "is_deliverable": is_deliverable,
+                "content_preview": content_preview,
             },
         )
     except Exception as e:

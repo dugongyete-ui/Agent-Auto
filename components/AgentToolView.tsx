@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { ToolContent } from "@/lib/chat";
@@ -40,17 +40,203 @@ function ToolIcon({ name }: { name: string }) {
   }
 }
 
+const KEYWORD_COLOR = "#FF79C6";
+const STRING_COLOR = "#F1FA8C";
+const COMMENT_COLOR = "#6272A4";
+const NUMBER_COLOR = "#BD93F9";
+const FUNC_COLOR = "#50FA7B";
+const DEFAULT_COLOR = "#F8F8F2";
+const PUNCTUATION_COLOR = "#8E8E93";
 
-function ShellContent({ content }: { content: string }) {
+interface TokenSpan {
+  text: string;
+  color: string;
+}
+
+function tokenizeLine(line: string, lang: string): TokenSpan[] {
+  if (!lang || lang === "text") {
+    return [{ text: line, color: DEFAULT_COLOR }];
+  }
+
+  const tokens: TokenSpan[] = [];
+  const keywords = new Set([
+    "import", "from", "def", "class", "return", "if", "else", "elif", "for",
+    "while", "try", "except", "finally", "with", "as", "in", "not", "and",
+    "or", "is", "None", "True", "False", "async", "await", "yield", "raise",
+    "pass", "break", "continue", "lambda", "global", "nonlocal", "del", "assert",
+    "const", "let", "var", "function", "export", "default", "new", "this",
+    "typeof", "instanceof", "void", "null", "undefined", "true", "false",
+    "interface", "type", "enum", "extends", "implements", "abstract", "static",
+    "public", "private", "protected", "readonly", "override",
+    "echo", "fi", "then", "do", "done", "case", "esac",
+    "SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP",
+    "TABLE", "INTO", "VALUES", "SET", "JOIN", "ON", "AND", "OR", "ORDER", "BY",
+    "GROUP", "HAVING", "LIMIT", "OFFSET", "ALTER", "INDEX",
+  ]);
+
+  let i = 0;
+  while (i < line.length) {
+    if (line[i] === "#" || (line[i] === "/" && line[i + 1] === "/")) {
+      tokens.push({ text: line.slice(i), color: COMMENT_COLOR });
+      break;
+    }
+
+    if (line[i] === '"' || line[i] === "'" || line[i] === "`") {
+      const quote = line[i];
+      let j = i + 1;
+      while (j < line.length && line[j] !== quote) {
+        if (line[j] === "\\") j++;
+        j++;
+      }
+      j = Math.min(j + 1, line.length);
+      tokens.push({ text: line.slice(i, j), color: STRING_COLOR });
+      i = j;
+      continue;
+    }
+
+    if (/[0-9]/.test(line[i]) && (i === 0 || /[\s(,=:+\-*/<>[\]{}]/.test(line[i - 1]))) {
+      let j = i;
+      while (j < line.length && /[0-9.xXa-fA-F_eE+\-]/.test(line[j])) j++;
+      tokens.push({ text: line.slice(i, j), color: NUMBER_COLOR });
+      i = j;
+      continue;
+    }
+
+    if (/[a-zA-Z_$]/.test(line[i])) {
+      let j = i;
+      while (j < line.length && /[a-zA-Z0-9_$]/.test(line[j])) j++;
+      const word = line.slice(i, j);
+      if (keywords.has(word)) {
+        tokens.push({ text: word, color: KEYWORD_COLOR });
+      } else if (j < line.length && line[j] === "(") {
+        tokens.push({ text: word, color: FUNC_COLOR });
+      } else {
+        tokens.push({ text: word, color: DEFAULT_COLOR });
+      }
+      i = j;
+      continue;
+    }
+
+    if (/[{}()\[\];:.,=<>+\-*/%!&|^~?@]/.test(line[i])) {
+      tokens.push({ text: line[i], color: PUNCTUATION_COLOR });
+      i++;
+      continue;
+    }
+
+    tokens.push({ text: line[i], color: DEFAULT_COLOR });
+    i++;
+  }
+
+  return tokens;
+}
+
+interface CodeBlock {
+  type: "code";
+  lang: string;
+  content: string;
+}
+
+interface TextBlock {
+  type: "text";
+  content: string;
+}
+
+type ContentBlock = CodeBlock | TextBlock;
+
+function parseMarkdownBlocks(text: string): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      const before = text.slice(lastIndex, match.index).trim();
+      if (before) blocks.push({ type: "text", content: before });
+    }
+    blocks.push({ type: "code", lang: match[1] || "text", content: match[2].replace(/\n$/, "") });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    const after = text.slice(lastIndex).trim();
+    if (after) blocks.push({ type: "text", content: after });
+  }
+
+  if (blocks.length === 0 && text.trim()) {
+    blocks.push({ type: "text", content: text.trim() });
+  }
+
+  return blocks;
+}
+
+function HighlightedCode({ content, lang, maxLines }: { content: string; lang: string; maxLines?: number }) {
+  const lines = useMemo(() => {
+    const allLines = content.split("\n");
+    const limited = maxLines ? allLines.slice(0, maxLines) : allLines;
+    return limited.map((line) => tokenizeLine(line, lang));
+  }, [content, lang, maxLines]);
+
+  const truncated = maxLines && content.split("\n").length > maxLines;
+
   return (
-    <View style={styles.shellContainer}>
+    <View style={styles.codeBlockContainer}>
+      {lang ? (
+        <View style={styles.langBadge}>
+          <Text style={styles.langBadgeText}>{lang}</Text>
+        </View>
+      ) : null}
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <Text style={styles.shellText} selectable>
-          {content || "(no output)"}
-        </Text>
+        <View>
+          {lines.map((lineTokens, lineIdx) => (
+            <View key={lineIdx} style={styles.codeLine}>
+              <Text style={styles.lineNumber}>{lineIdx + 1}</Text>
+              <Text style={styles.codeText} selectable>
+                {lineTokens.map((token, tIdx) => (
+                  <Text key={tIdx} style={{ color: token.color }}>{token.text}</Text>
+                ))}
+              </Text>
+            </View>
+          ))}
+          {truncated ? (
+            <Text style={styles.truncatedIndicator}>... (more lines)</Text>
+          ) : null}
+        </View>
       </ScrollView>
     </View>
   );
+}
+
+function RichContent({ content, language, isShell }: { content: string; language?: string; isShell?: boolean }) {
+  const blocks = useMemo(() => parseMarkdownBlocks(content), [content]);
+
+  const effectiveLang = language || (isShell ? "bash" : "");
+
+  if (blocks.length === 1 && blocks[0].type === "text") {
+    if (effectiveLang || isShell) {
+      return <HighlightedCode content={content || "(no output)"} lang={effectiveLang || "bash"} maxLines={30} />;
+    }
+    return <HighlightedCode content={content || "(empty)"} lang="text" maxLines={30} />;
+  }
+
+  return (
+    <View style={styles.richContentContainer}>
+      {blocks.map((block, idx) => {
+        if (block.type === "code") {
+          return <HighlightedCode key={idx} content={block.content} lang={block.lang || effectiveLang} maxLines={30} />;
+        }
+        const trimmed = block.content.trim();
+        if (!trimmed) return null;
+        return (
+          <Text key={idx} style={styles.textContent} selectable>{trimmed}</Text>
+        );
+      })}
+    </View>
+  );
+}
+
+function ShellContent({ content }: { content: string }) {
+  return <RichContent content={content} language="bash" isShell />;
 }
 
 function SearchContent({
@@ -100,22 +286,10 @@ function BrowserContent({
   );
 }
 
-function FileContent({ content }: { content: string }) {
-  return (
-    <View style={styles.fileContainer}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <Text style={styles.fileText} selectable numberOfLines={10}>
-          {content || "(empty)"}
-        </Text>
-      </ScrollView>
-    </View>
-  );
+function FileContent({ content, language }: { content: string; language?: string }) {
+  return <RichContent content={content} language={language} />;
 }
 
-/**
- * Get the primary argument to show inline on the tool card (ai-manus style).
- * Maps function names to their most relevant argument key.
- */
 function getToolFunctionArg(functionName: string, args: Record<string, unknown>): string {
   const argKeyMap: Record<string, string> = {
     shell_exec: "command",
@@ -147,7 +321,6 @@ function getToolFunctionArg(functionName: string, args: Record<string, unknown>)
   };
   const key = argKeyMap[functionName] || "";
   if (!key) {
-    // Fall back to first arg value
     const firstKey = Object.keys(args)[0];
     if (firstKey) {
       const val = String(args[firstKey] ?? "");
@@ -156,14 +329,10 @@ function getToolFunctionArg(functionName: string, args: Record<string, unknown>)
     return "";
   }
   const val = String(args[key] ?? "");
-  // Strip common path prefix for cleaner display
   const cleaned = val.replace(/^\/home\/ubuntu\//, "");
   return cleaned.length > 60 ? cleaned.slice(0, 60) + "..." : cleaned;
 }
 
-/**
- * Get the display label for the function (ai-manus style action description).
- */
 function getToolFunctionLabel(functionName: string): string {
   const labelMap: Record<string, string> = {
     shell_exec: "Executing command",
@@ -196,6 +365,28 @@ function getToolFunctionLabel(functionName: string): string {
   return labelMap[functionName] || functionName;
 }
 
+function CallingArgsPreview({ functionName, args }: { functionName: string; args: Record<string, unknown> }) {
+  if (functionName === "shell_exec") {
+    const cmd = String(args.command ?? "");
+    if (cmd) {
+      return <HighlightedCode content={cmd} lang="bash" maxLines={5} />;
+    }
+  }
+  if (functionName === "file_write") {
+    const file = String(args.file ?? "");
+    const contentStr = String(args.content ?? "");
+    const preview = contentStr.length > 500 ? contentStr.slice(0, 500) + "..." : contentStr;
+    const ext = file.split(".").pop() || "";
+    return (
+      <View>
+        <Text style={styles.callingFileLabel}>{file}</Text>
+        {preview ? <HighlightedCode content={preview} lang={ext} maxLines={10} /> : null}
+      </View>
+    );
+  }
+  return null;
+}
+
 export function AgentToolView({
   toolName,
   functionName,
@@ -209,7 +400,6 @@ export function AgentToolView({
   const isCalled = status === "called";
   const isError = status === "error";
 
-  // ai-manus style: show function action label + primary arg inline
   const functionLabel = getToolFunctionLabel(functionName);
   const primaryArg = getToolFunctionArg(functionName, functionArgs);
 
@@ -247,20 +437,28 @@ export function AgentToolView({
         </View>
       </TouchableOpacity>
 
-      {/* Expanded content */}
+      {isCalling && (
+        <View style={styles.callingPreview}>
+          <CallingArgsPreview functionName={functionName} args={functionArgs} />
+        </View>
+      )}
+
       {expanded && (
         <View style={styles.expandedContent}>
-          {/* Args */}
           <View style={styles.argsContainer}>
             <Text style={styles.argsLabel}>Arguments:</Text>
-            {Object.entries(functionArgs).map(([key, val]) => (
-              <Text key={key} style={styles.argItem}>
-                {key}: {String(val).slice(0, 200)}
-              </Text>
-            ))}
+            {Object.entries(functionArgs).map(([key, val]) => {
+              const valStr = String(val ?? "");
+              const isLong = valStr.length > 200;
+              return (
+                <Text key={key} style={styles.argItem}>
+                  <Text style={styles.argKey}>{key}: </Text>
+                  {isLong ? valStr.slice(0, 200) + "..." : valStr}
+                </Text>
+              );
+            })}
           </View>
 
-          {/* Tool content - show for both called and error states */}
           {toolContent && (isCalled || isError) && (
             <View style={styles.resultContainer}>
               {toolContent.type === "shell" && toolContent.console != null && (
@@ -276,32 +474,33 @@ export function AgentToolView({
                 />
               )}
               {toolContent.type === "file" && toolContent.content != null && (
-                <FileContent content={toolContent.content} />
+                <FileContent
+                  content={toolContent.content}
+                  language={toolContent.language}
+                />
               )}
               {toolContent.type === "mcp" && toolContent.result != null && (
-                <View style={styles.shellContainer}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <Text style={styles.shellText} selectable>
-                      {toolContent.result || "(no result)"}
-                    </Text>
-                  </ScrollView>
-                </View>
+                <RichContent content={toolContent.result || "(no result)"} language="json" />
               )}
             </View>
           )}
 
-          {/* Function result text fallback */}
-          {!toolContent && functionResult && (isCalled || isError) && (
-            <View style={styles.resultContainer}>
-              <View style={styles.shellContainer}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <Text style={[styles.shellText, isError && styles.errorResultText]} selectable numberOfLines={10}>
-                    {functionResult.slice(0, 500)}
-                  </Text>
-                </ScrollView>
+          {functionResult && (isCalled || isError) && (() => {
+            const hasToolContent = toolContent && (
+              (toolContent.type === "shell" && toolContent.console) ||
+              (toolContent.type === "file" && toolContent.content) ||
+              (toolContent.type === "search" && toolContent.results) ||
+              (toolContent.type === "browser" && toolContent.content)
+            );
+            if (hasToolContent) return null;
+            const resultLang = functionName.startsWith("shell") ? "bash" :
+              functionName.startsWith("file") ? (toolContent?.language || "") : "";
+            return (
+              <View style={styles.resultContainer}>
+                <RichContent content={functionResult.slice(0, 2000)} language={resultLang} isShell={functionName.startsWith("shell")} />
               </View>
-            </View>
-          )}
+            );
+          })()}
         </View>
       )}
     </View>
@@ -360,6 +559,15 @@ const styles = StyleSheet.create({
   errorResultText: {
     color: "#FF6B6B",
   },
+  callingPreview: {
+    marginTop: 6,
+  },
+  callingFileLabel: {
+    fontFamily: "monospace",
+    fontSize: 11,
+    color: "#FFD60A",
+    marginBottom: 4,
+  },
   expandedContent: {
     marginTop: 8,
     gap: 8,
@@ -381,6 +589,10 @@ const styles = StyleSheet.create({
     color: "#A0A0A8",
     lineHeight: 16,
   },
+  argKey: {
+    color: "#5AC8FA",
+    fontFamily: "Inter_600SemiBold",
+  },
   resultContainer: {
     marginTop: 4,
   },
@@ -388,7 +600,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#0D0D10",
     borderRadius: 6,
     padding: 8,
-    maxHeight: 150,
+    maxHeight: 200,
   },
   shellText: {
     fontFamily: "monospace",
@@ -450,6 +662,70 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     fontSize: 11,
     color: "#FFD60A",
+    lineHeight: 16,
+  },
+  codeBlockContainer: {
+    backgroundColor: "#0D0D10",
+    borderRadius: 8,
+    padding: 8,
+    maxHeight: 250,
+    overflow: "hidden",
+  },
+  langBadge: {
+    position: "absolute",
+    top: 4,
+    right: 8,
+    backgroundColor: "rgba(108, 92, 231, 0.2)",
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    zIndex: 1,
+  },
+  langBadgeText: {
+    fontFamily: "monospace",
+    fontSize: 9,
+    color: "#6C5CE7",
+    textTransform: "uppercase",
+  },
+  codeLine: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  lineNumber: {
+    fontFamily: "monospace",
+    fontSize: 10,
+    color: "#3A3A44",
+    width: 28,
+    textAlign: "right",
+    marginRight: 8,
+    lineHeight: 16,
+  },
+  codeText: {
+    fontFamily: "monospace",
+    fontSize: 11,
+    lineHeight: 16,
+    flexShrink: 1,
+  },
+  truncatedIndicator: {
+    fontFamily: "monospace",
+    fontSize: 10,
+    color: "#636366",
+    marginTop: 4,
+    fontStyle: "italic",
+  },
+  richContentContainer: {
+    gap: 6,
+  },
+  textBlock: {
+    backgroundColor: "#0D0D10",
+    borderRadius: 6,
+    padding: 8,
+    maxHeight: 200,
+  },
+  textContent: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    color: "#A0A0A8",
     lineHeight: 16,
   },
 });

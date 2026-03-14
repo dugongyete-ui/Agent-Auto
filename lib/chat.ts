@@ -93,6 +93,7 @@ export interface ToolContent {
   tool?: string;
   result?: string;
   screenshot_b64?: string;
+  language?: string;
 }
 
 export type AgentEventType =

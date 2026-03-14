@@ -182,8 +182,11 @@ def keepalive() -> bool:
             return False
 
 
-def run_command(command: str, workdir: str = WORKSPACE_DIR, timeout: int = 120) -> Dict[str, Any]:
-    """Run a shell command in the E2B sandbox and return result dict. Auto-retries on failure."""
+def run_command(command: str, workdir: str = WORKSPACE_DIR, timeout: int = 120,
+                on_stdout=None, on_stderr=None) -> Dict[str, Any]:
+    """Run a shell command in the E2B sandbox and return result dict. Auto-retries on failure.
+    If on_stdout/on_stderr callbacks are provided, they are called with each line of output
+    in real-time as it arrives from the sandbox."""
     for attempt in range(2):
         sb = get_sandbox()
         if sb is None:
@@ -207,7 +210,13 @@ def run_command(command: str, workdir: str = WORKSPACE_DIR, timeout: int = 120) 
                 except Exception:
                     pass
 
-            result = sb.commands.run(command, cwd=workdir, timeout=timeout)
+            run_kwargs: Dict[str, Any] = {"cwd": workdir, "timeout": timeout}
+            if on_stdout is not None:
+                run_kwargs["on_stdout"] = on_stdout
+            if on_stderr is not None:
+                run_kwargs["on_stderr"] = on_stderr
+
+            result = sb.commands.run(command, **run_kwargs)
             return {
                 "success": (result.exit_code == 0),
                 "stdout": result.stdout or "",

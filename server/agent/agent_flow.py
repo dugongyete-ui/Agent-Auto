@@ -456,6 +456,25 @@ def _extract_cf_response(api_result: Dict[str, Any]) -> tuple:
     return text, tool_calls
 
 
+_LANG_MAP = {
+    "py": "python", "js": "javascript", "ts": "typescript", "tsx": "typescript",
+    "jsx": "javascript", "html": "html", "css": "css", "json": "json",
+    "yaml": "yaml", "yml": "yaml", "sh": "bash", "bash": "bash",
+    "sql": "sql", "md": "markdown", "xml": "xml", "svg": "xml",
+    "java": "java", "cpp": "cpp", "c": "c", "go": "go", "rs": "rust",
+    "rb": "ruby", "php": "php", "swift": "swift", "kt": "kotlin",
+    "csv": "csv", "txt": "text",
+}
+
+
+def _infer_language(filepath: str) -> str:
+    if not filepath:
+        return ""
+    import os as _os
+    ext = _os.path.splitext(filepath)[1].lstrip(".")
+    return _LANG_MAP.get(ext, ext)
+
+
 def build_tool_content(tool_name: str, tool_result: ToolResult) -> Optional[Dict[str, Any]]:
     data = tool_result.data or {}
 
@@ -499,8 +518,9 @@ def build_tool_content(tool_name: str, tool_result: ToolResult) -> Optional[Dict
             "type": "file",
             "file": data.get("file", data.get("image", data.get("path", ""))),
             "filename": data.get("filename", ""),
-            "content": str(data.get("content", ""))[:2000],
+            "content": str(data.get("content_preview", "") or data.get("content", ""))[:2000],
             "operation": tool_name.replace("file_", ""),
+            "language": _infer_language(data.get("file", data.get("filename", ""))),
         }
     elif tool_name in ("mcp_call_tool", "mcp_list_tools"):
         return {"type": "mcp", "tool": data.get("tool_name", ""), "result": str(data)[:2000]}

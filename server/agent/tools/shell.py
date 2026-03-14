@@ -55,12 +55,34 @@ def _shell_quote(s: str) -> str:
 
 
 def _run_e2b(command: str, exec_dir: str = "/home/user/dzeck-ai", timeout: int = 90) -> Dict[str, Any]:
-    """Execute command via E2B cloud sandbox. Auto-ensures workspace dir exists."""
+    """Execute command via E2B cloud sandbox. Auto-ensures workspace dir exists.
+    Streams stdout/stderr to stream_queue if one is registered on the current thread.
+    Uses run_command wrapper for consistent retry/guardrail behavior."""
     try:
         from server.agent.tools.e2b_sandbox import run_command, WORKSPACE_DIR
         effective_dir = exec_dir or WORKSPACE_DIR
-        return run_command(command, workdir=effective_dir, timeout=timeout)
+        stream_q = get_stream_queue()
+
+        if stream_q is not None:
+            def _on_stdout(data):
+                line = data if isinstance(data, str) else getattr(data, 'line', str(data))
+                stream_q.put(("stdout", line))
+
+            def _on_stderr(data):
+                line = data if isinstance(data, str) else getattr(data, 'line', str(data))
+                stream_q.put(("stderr", line))
+
+            result = run_command(command, workdir=effective_dir, timeout=timeout,
+                                on_stdout=_on_stdout, on_stderr=_on_stderr)
+            stream_q.put(None)
+        else:
+            result = run_command(command, workdir=effective_dir, timeout=timeout)
+
+        return result
     except Exception as e:
+        stream_q = get_stream_queue()
+        if stream_q is not None:
+            stream_q.put(None)
         return {"success": False, "stdout": "", "stderr": str(e), "exit_code": -1}
 
 
