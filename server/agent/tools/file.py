@@ -238,8 +238,8 @@ def file_write(
         if is_deliverable:
             download_url = _register_file_for_download(local_path)
 
-        content_preview = content[:1000]
-        if len(content) > 1000:
+        content_preview = content[:3000]
+        if len(content) > 3000:
             content_preview += "\n... (truncated, total {} chars)".format(len(content))
 
         ext = os.path.splitext(file)[1].lstrip(".") if "." in os.path.basename(file) else ""

@@ -514,14 +514,26 @@ def build_tool_content(tool_name: str, tool_result: ToolResult) -> Optional[Dict
     elif tool_name in ("file_read", "file_write", "file_str_replace",
                        "file_find_by_name", "file_find_in_content",
                        "image_view"):
-        return {
+        file_path = data.get("file", data.get("image", data.get("path", "")))
+        fname = data.get("filename", "") or (os.path.basename(file_path) if file_path else "")
+        content_str = str(data.get("content_preview", "") or data.get("content", ""))
+        # Show up to 5000 chars so user can see the actual code created
+        content_display = content_str[:5000]
+        result: Dict[str, Any] = {
             "type": "file",
-            "file": data.get("file", data.get("image", data.get("path", ""))),
-            "filename": data.get("filename", ""),
-            "content": str(data.get("content_preview", "") or data.get("content", ""))[:2000],
+            "file": file_path,
+            "filename": fname,
+            "content": content_display,
             "operation": tool_name.replace("file_", ""),
-            "language": _infer_language(data.get("file", data.get("filename", ""))),
+            "language": _infer_language(file_path or fname),
         }
+        # Include download_url so frontend can show a download button
+        durl = data.get("download_url", "")
+        if durl:
+            result["download_url"] = durl
+        if data.get("is_deliverable"):
+            result["is_deliverable"] = True
+        return result
     elif tool_name in ("mcp_call_tool", "mcp_list_tools"):
         return {"type": "mcp", "tool": data.get("tool_name", ""), "result": str(data)[:2000]}
 
@@ -744,6 +756,65 @@ class DzeckAgent:
     def _parse_response(self, text: str) -> Dict[str, Any]:
         result, _ = self.parser.parse(text)
         return result if result is not None else {}
+
+    def _extract_tool_from_text(self, text: str) -> Optional[Dict[str, Any]]:
+        """Try to extract a tool call JSON from a text response.
+        
+        LLMs often wrap tool calls in explanatory text. This method
+        tries harder than _parse_response to find a valid tool call.
+        """
+        if not text:
+            return None
+        # First try normal parse
+        parsed = self._parse_response(text)
+        if parsed.get("tool"):
+            return parsed
+        # Try to find JSON blocks in text (markdown fenced or inline)
+        import re as _re
+        # Look for ```json ... ``` blocks
+        json_blocks = _re.findall(r'```(?:json)?\s*\n?(.*?)\n?\s*```', text, _re.DOTALL)
+        for block in json_blocks:
+            try:
+                obj = json.loads(block.strip())
+                if isinstance(obj, dict) and obj.get("tool"):
+                    return obj
+            except (json.JSONDecodeError, ValueError):
+                continue
+        # Look for { "tool": ... } pattern anywhere in text
+        tool_match = _re.search(r'\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"args"\s*:\s*\{', text)
+        if tool_match:
+            # Extract from match start to find matching brace
+            start = tool_match.start()
+            depth = 0
+            in_str = False
+            esc = False
+            for i in range(start, len(text)):
+                c = text[i]
+                if esc:
+                    esc = False
+                    continue
+                if c == '\\':
+                    esc = True
+                    continue
+                if c == '"' and not esc:
+                    in_str = not in_str
+                    continue
+                if in_str:
+                    continue
+                if c == '{':
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        candidate = text[start:i + 1]
+                        try:
+                            obj = json.loads(candidate)
+                            if isinstance(obj, dict) and obj.get("tool"):
+                                return obj
+                        except (json.JSONDecodeError, ValueError):
+                            break
+                        break
+        return None
 
     def _detect_language(self, text: str) -> str:
         id_words = [
@@ -1417,7 +1488,7 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                     if iteration > 0 and iteration % 5 == 0:
                         self.memory.compact()
                     # Compact exec_messages if context is getting too long (>12 messages)
-                    if len(exec_messages) > 12:
+                    if len(exec_messages) > 20:
                         exec_messages = _compact_exec_messages(exec_messages)
                     continue
 
@@ -1484,22 +1555,53 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                         })
                         if iteration > 0 and iteration % 5 == 0:
                             self.memory.compact()
-                        # Compact exec_messages if context is getting too long (>12 messages)
-                        if len(exec_messages) > 12:
+                        # Compact exec_messages if context is getting too long (>20 messages)
+                        if len(exec_messages) > 20:
                             exec_messages = _compact_exec_messages(exec_messages)
                         continue
 
+                # Try harder to extract a tool call from the text response
                 if text:
+                    # Attempt to find a JSON tool call embedded in the text
+                    _extracted_tool = self._extract_tool_from_text(text)
+                    if _extracted_tool:
+                        _ext_name = _extracted_tool.get("tool", "")
+                        _ext_args = _extracted_tool.get("args", {})
+                        _ext_resolved = resolve_tool_name(_ext_name)
+                        if _ext_resolved:
+                            tc_id = "tc_{}_{}_extracted".format(step.id, iteration)
+                            result_str = "Done"
+                            step_done = False
+                            async for ev in self._run_tool_streaming(_ext_resolved, _ext_args, tc_id, step):
+                                if ev.get("type") == "__step_done__":
+                                    step_done = True
+                                    break
+                                elif ev.get("type") == "__result__":
+                                    result_str = ev.get("value", "Done")
+                                else:
+                                    yield ev
+                            if step_done:
+                                return
+                            exec_messages.append({
+                                "role": "user",
+                                "content": "Result of {}: {}\n\nContinue. Use another tool or call idle when step is fully done.".format(_ext_resolved, result_str)
+                            })
+                            if len(exec_messages) > 20:
+                                exec_messages = _compact_exec_messages(exec_messages)
+                            continue
+
                     yield make_event("notify", message=text[:500])
                 exec_messages.append({"role": "assistant", "content": text or "(empty response)"})
                 exec_messages.append({
                     "role": "user",
                     "content": (
                         "You responded with plain text instead of a tool call. "
-                        "You MUST respond with a JSON object to call a tool or signal completion. "
-                        "Use {\"tool\": \"tool_name\", \"args\": {...}} to call a tool, "
-                        "or {\"done\": true, \"success\": true, \"result\": \"summary\"} to finish. "
-                        "Try again now."
+                        "You MUST respond with ONLY a JSON object to call a tool or signal completion.\n"
+                        "CORRECT FORMAT for tool call:\n"
+                        '{"tool": "file_write", "args": {"file": "/home/user/dzeck-ai/output/example.py", "content": "print(hello)"}}\n'
+                        "CORRECT FORMAT for completion:\n"
+                        '{"done": true, "success": true, "result": "summary of what was done"}\n'
+                        "Respond with ONLY the JSON object, nothing else."
                     ),
                 })
                 continue

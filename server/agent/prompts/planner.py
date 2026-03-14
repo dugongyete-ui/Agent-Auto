@@ -39,6 +39,21 @@ Panduan penulisan langkah:
 - JANGAN PERNAH buat langkah seperti "tunggu halaman terbuka" atau "wait for page" — ini menyebabkan penggunaan tool yang salah.
   Gunakan: "Navigasi ke [URL] menggunakan browser dan tampilkan isi halaman" (1 langkah gabungan)
 
+Panduan KHUSUS untuk tugas CODING / FULLSTACK PROJECT:
+- WAJIB pecah pembuatan file menjadi langkah-langkah individual
+- Setiap langkah coding HARUS spesifik tentang file apa yang dibuat
+- Contoh BENAR untuk website:
+  Step 1: "Setup environment dan install dependensi yang dibutuhkan"
+  Step 2: "Buat file index.html dengan struktur HTML lengkap, CSS, dan referensi ke script"
+  Step 3: "Buat file style.css dengan styling lengkap untuk seluruh halaman"
+  Step 4: "Buat file app.js dengan logika aplikasi lengkap"
+  Step 5: "Validasi sintaks semua file dan verifikasi struktur project"
+  Step 6: "Package project ke ZIP dan kirim notifikasi ke user"
+- Contoh SALAH: "Buat semua file project" (terlalu abstrak, tidak spesifik)
+- SETIAP file harus dibuat dengan kode LENGKAP, BUKAN placeholder
+- Sertakan langkah install dependensi SEBELUM langkah yang menggunakannya
+- Sertakan langkah validasi/test SETELAH pembuatan file
+
 Tool routing hints to embed in step descriptions:
 - Web access / URL / website → "Buka [URL] menggunakan browser" → executor akan pakai browser_navigate
 - View page after navigation → embed "dan tampilkan hasilnya" → executor pakai browser_view setelah navigate
@@ -93,6 +108,22 @@ ANTI-HALUSINASI (WAJIB DIPATUHI):
 ATURAN RETRY & ERROR:
 - Jika step gagal, plan harus mendukung pendekatan alternatif
 - JANGAN buat step yang identik berulang — setiap retry harus berbeda pendekatannya
+
+CONTOH PLAN CODING PROJECT (Website Portfolio):
+{{
+  "message": "Saya akan membuat website portfolio lengkap dengan HTML, CSS, dan JavaScript.",
+  "goal": "Membuat website portfolio responsif dengan halaman utama, about, dan kontak",
+  "title": "Buat Website Portfolio",
+  "language": "id",
+  "steps": [
+    {{"id": "step_1", "description": "Setup workspace dan buat struktur direktori project di /home/user/dzeck-ai/output/portfolio/"}},
+    {{"id": "step_2", "description": "Buat file index.html dengan struktur HTML5 lengkap termasuk navbar, hero section, about section, portfolio grid, dan footer. Semua konten harus real bukan placeholder."}},
+    {{"id": "step_3", "description": "Buat file style.css dengan styling lengkap: responsive layout, animasi, hover effects, dan mobile-friendly design menggunakan CSS Grid/Flexbox."}},
+    {{"id": "step_4", "description": "Buat file script.js dengan interaktivitas: smooth scroll, mobile menu toggle, portfolio filter, dan form validation."}},
+    {{"id": "step_5", "description": "Validasi sintaks semua file, verifikasi referensi antar file benar, dan package ke ZIP."}},
+    {{"id": "step_6", "description": "Kirim notifikasi ke user bahwa website portfolio sudah siap dan bisa didownload."}} 
+  ]
+}}
 """
 
 CREATE_PLAN_PROMPT = """Analisis permintaan pengguna berikut dan buat rencana eksekusi.

@@ -94,6 +94,9 @@ export interface ToolContent {
   result?: string;
   screenshot_b64?: string;
   language?: string;
+  download_url?: string;
+  filename?: string;
+  is_deliverable?: boolean;
 }
 
 export type AgentEventType =

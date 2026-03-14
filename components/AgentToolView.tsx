@@ -375,12 +375,12 @@ function CallingArgsPreview({ functionName, args }: { functionName: string; args
   if (functionName === "file_write") {
     const file = String(args.file ?? "");
     const contentStr = String(args.content ?? "");
-    const preview = contentStr.length > 500 ? contentStr.slice(0, 500) + "..." : contentStr;
+    const preview = contentStr.length > 2000 ? contentStr.slice(0, 2000) + "..." : contentStr;
     const ext = file.split(".").pop() || "";
     return (
       <View>
         <Text style={styles.callingFileLabel}>{file}</Text>
-        {preview ? <HighlightedCode content={preview} lang={ext} maxLines={10} /> : null}
+        {preview ? <HighlightedCode content={preview} lang={ext} maxLines={40} /> : null}
       </View>
     );
   }

@@ -202,8 +202,9 @@ function BrowserContent({ url, title, content, screenshotB64 }: { url?: string; 
   );
 }
 
-function FileContent({ file, content, operation }: { file?: string; content?: string; operation?: string }) {
+function FileContent({ file, content, operation, downloadUrl, filename }: { file?: string; content?: string; operation?: string; downloadUrl?: string; filename?: string }) {
   const displayFile = file ? file.replace(/^\/home\/ubuntu\//, "~/") : "";
+  const displayName = filename || (file ? file.split("/").pop() : "");
   return (
     <View style={styles.fileBody}>
       {displayFile ? (
@@ -213,9 +214,15 @@ function FileContent({ file, content, operation }: { file?: string; content?: st
           {operation ? <Text style={styles.fileOp}>{operation}</Text> : null}
         </View>
       ) : null}
+      {downloadUrl ? (
+        <View style={styles.downloadBadge}>
+          <Ionicons name="download-outline" size={12} color="#30D158" />
+          <Text style={styles.downloadText}>{displayName || "File"} ready for download</Text>
+        </View>
+      ) : null}
       {content ? (
         <ScrollView style={styles.fileContent} showsVerticalScrollIndicator={false}>
-          <Text style={styles.fileContentText} selectable numberOfLines={10}>{content.slice(0, 1000)}</Text>
+          <Text style={styles.fileContentText} selectable numberOfLines={30}>{content.slice(0, 3000)}</Text>
         </ScrollView>
       ) : null}
     </View>
@@ -292,6 +299,8 @@ function ToolBody({ functionName, functionArgs, toolContent, functionResult, sta
           file={String(functionArgs.file || functionArgs.path || functionArgs.image || "")}
           content={toolContent.content}
           operation={toolContent.operation}
+          downloadUrl={toolContent.download_url}
+          filename={toolContent.filename}
         />
       );
     }
@@ -642,8 +651,23 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.3)",
     textTransform: "capitalize",
   },
+  downloadBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: "rgba(48,209,88,0.08)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(48,209,88,0.15)",
+  },
+  downloadText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    color: "#30D158",
+  },
   fileContent: {
-    maxHeight: 160,
+    maxHeight: 300,
     padding: 10,
   },
   fileContentText: {
