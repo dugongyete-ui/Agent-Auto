@@ -1,137 +1,18 @@
-entrypoint = "README.md"
-modules = ["nodejs-22", "python-3.11"]
+modules = ["nodejs-20", "web", "postgresql-16"]
+run = "npm run dev"
+hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["alsa-lib", "at-spi2-atk", "atk", "cairo", "cups", "dbus", "expat", "gitFull", "glib", "libxcrypt", "libxkbcommon", "mesa", "nspr", "nss", "pango", "playwright-driver", "x11vnc", "xorg.libX11", "xorg.libXScrnSaver", "xorg.libXcomposite", "xorg.libXcursor", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXi", "xorg.libXinerama", "xorg.libXrandr", "xorg.libXtst", "xorg.libxcb", "xorg.xorgserver", "xorg.xsetroot", "xorg.xdpyinfo", "fluxbox", "feh"]
-
-[deployment]
-deploymentTarget = "vm"
-build = ["sh", "-c", "npm run server:build"]
-run = ["sh", "-c", "npm run server:prod"]
 
 [[ports]]
 localPort = 5000
-externalPort = 5000
-
-[[ports]]
-localPort = 5910
-externalPort = 3002
-
-[[ports]]
-localPort = 6081
-externalPort = 3001
-
-[[ports]]
-localPort = 6082
-externalPort = 4200
-
-[[ports]]
-localPort = 8081
 externalPort = 80
-
-[[ports]]
-localPort = 8082
-externalPort = 3000
-
-[[ports]]
-localPort = 8083
-externalPort = 5173
-
-[[ports]]
-localPort = 8084
-externalPort = 6000
-
-[[ports]]
-localPort = 8099
-externalPort = 8099
-
-[[ports]]
-localPort = 9222
-externalPort = 3003
-exposeLocalhost = true
 
 [env]
 PORT = "5000"
 
-[agent]
-stack = "EXPO"
-expertMode = true
-
-[workflows]
-runButton = "Project"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Start App"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Start Backend"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Start Frontend"
-
-[[workflows.workflow]]
-name = "Start App"
-author = "agent"
-mode = "parallel"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Start Backend"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Start Frontend"
-
-[[workflows.workflow]]
-name = "Start Backend"
-author = "agent"
-mode = "sequential"
-
-[workflows.workflow.metadata]
-outputType = "webview"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npm run server:dev"
-waitForPort = 5000
-
-[[workflows.workflow]]
-name = "Start Frontend"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npm run expo:dev"
-waitForPort = 8081
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[userenv]
-
-[userenv.shared]
-CF_ACCOUNT_ID = "6c807fe58ad83714e772403cd528dbeb"
-CF_GATEWAY_NAME = "dzeck"
-REDIS_PORT = "16364"
-API_KEY = "YsjNngJW0aFPVNSxuCCANgzTePXfiOSHu5w-V62h"
-SESSION_TTL_HOURS = "24"
-MAX_AGENT_STEPS = "20"
-PLAYWRIGHT_ENABLED = "true"
-CF_MODEL = "@cf/qwen/qwen3-30b-a3b-fp8"
-CF_AGENT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
-E2B_API_KEY = "e2b_566a6a5f596ccabdd31defe243791117791220b2"
-REDIS_HOST = "redis-16364.c279.us-central1-1.gce.cloud.redislabs.com"
-MCP_SERVER_URL = "https://mcp.cloudflare.com/mcp"
-
-[postMerge]
-path = "scripts/post-merge.sh"
-timeoutMs = 120000
+[deployment]
+deploymentTarget = "autoscale"
+run = ["node", "./dist/index.cjs"]
+build = ["npm", "run", "build"]
