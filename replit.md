@@ -19,6 +19,18 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - Do not make changes to the `app/` folder without explicit instruction.
 - All prompts should be in Bahasa Indonesia by default.
 
+## Recent Updates (March 2026 — Session 8: Infrastructure Restoration & Sync)
+- **server/routes.ts restored:** Dikembalikan ke versi lengkap dari git history (commit b0edeb0) — 826 baris penuh dengan multer file upload, VNC WebSocket proxy, E2B sandbox status endpoint, `handleVncUpgrade` export, error handler untuk spawn Python.
+- **server/index.ts restored:** Dikembalikan ke versi asli — CORS setup, multi-port (5000/8081/8082), serve `web-chat.html` di root, QR code Expo Go, dynamic manifest routing.
+- **ESM Compatibility fixes:** `require()` diganti dengan `createRequire`/`import` ESM-compatible di kedua file karena `package.json` pakai `"type": "module"`. Termasuk `__dirname` fix via `fileURLToPath`.
+- **Python 3.11 installed:** Module python-3.11 ditambahkan ke environment, semua packages dari `requirements.txt` diinstall.
+- **Workflows restored:** Dua workflow dikembalikan ke konfigurasi asli:
+  - `Start Backend`: `NODE_ENV=development tsx server/index.ts` — port 5000, outputType=webview (menampilkan web-chat.html)
+  - `Start Frontend`: `npx expo start --web --port 8099` — outputType=console (untuk Expo Go APK)
+- **requirements.txt cleaned:** Hapus `anthropic>=0.40.0` dan duplikat packages.
+- **scripts/post-merge.sh cleaned:** Hapus `anthropic>=0.40.0`.
+- **setup.sh updated:** Informasi "Mulai server" diperbarui dengan perintah yang benar dan keterangan workflow Replit.
+
 ## Recent Updates (March 2026 — Session 7: Multi-Agent Architecture)
 - **Multi-Agent Coordination Layer:** Sistem Dzeck AI sekarang menggunakan 4 specialized agents yang dikoordinasikan oleh Orchestration Layer.
   - `server/agent/prompts/agents/web_agent.py` — Web Agent (Browsing & Extraction): spesialis browser automation, pencarian internet, scraping. Tools: browser_*, info_search_web, web_search, web_browse.

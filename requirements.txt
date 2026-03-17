@@ -1,5 +1,5 @@
 # ─── Dzeck AI — Python Dependencies ──────────────────────────────────────────
-# Sync: March 2026 | Multi-Agent Architecture
+# Sync: March 2026 | Multi-Agent Architecture (Cloudflare Workers AI)
 # Install: pip install -r requirements.txt
 
 # ── Core / Data Validation ────────────────────────────────────────────────────
@@ -24,9 +24,6 @@ e2b>=0.8.0
 # ── Database / Cache ─────────────────────────────────────────────────────────
 redis>=5.0.0
 motor>=3.0.0
-
-# ── Multi-Agent Orchestrator (Anthropic) ─────────────────────────────────────
-anthropic>=0.40.0
 
 # ── VNC / Display ────────────────────────────────────────────────────────────
 websockify>=0.10.0

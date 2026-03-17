@@ -32,7 +32,6 @@ if [ -n "$PYTHON" ]; then
     "e2b>=0.8.0" \
     "redis>=5.0.0" \
     "motor>=3.0.0" \
-    "anthropic>=0.40.0" \
     "websockify>=0.10.0" \
     2>&1 | tail -3 || true
 fi
