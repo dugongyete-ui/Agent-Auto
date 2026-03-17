@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Dzeck AI — Auto Setup & Install Dependencies
-# Run from project root: ./setup.sh
-# Updated: Synced with actual project usage (Mar 2026)
+# Dzeck AI — Auto Setup & Install ALL Dependencies (Sekali Jalan)
+# Jalankan dari root project: bash setup.sh
+# Diperbarui: March 2026 — Multi-Agent Architecture (Web · Data · Code · Files)
 #
 set -euo pipefail
 
@@ -11,238 +11,256 @@ BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-print_step()  { echo -e "${BLUE}[$(date +%H:%M:%S)]${NC} ${BOLD}$1${NC}"; }
+print_step()  { echo -e "\n${BLUE}[$(date +%H:%M:%S)]${NC} ${BOLD}▶ $1${NC}"; }
 print_ok()    { echo -e "${GREEN}  ✓ $1${NC}"; }
 print_warn()  { echo -e "${YELLOW}  ⚠ $1${NC}"; }
 print_error() { echo -e "${RED}  ✗ $1${NC}"; }
+print_info()  { echo -e "    ${CYAN}$1${NC}"; }
 
 echo ""
-echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}${BOLD}║     Dzeck AI — Setup & Install           ║${NC}"
-echo -e "${CYAN}${BOLD}║     Agent: llama-3.3-70b (tool-calling)   ║${NC}"
-echo -e "${CYAN}${BOLD}║     Chat:  qwen3-30b-a3b-fp8             ║${NC}"
-echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════╝${NC}"
+echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}${BOLD}║     Dzeck AI — Setup & Install ALL Dependencies       ║${NC}"
+echo -e "${CYAN}${BOLD}║     Multi-Agent: Web · Data · Code · Files            ║${NC}"
+echo -e "${CYAN}${BOLD}║     LLM: llama-3.3-70b (Cloudflare Workers AI)        ║${NC}"
+echo -e "${CYAN}${BOLD}║     Orchestrator: claude-opus-4-5 (Anthropic)         ║${NC}"
+echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# ─── Python detection ─────────────────────────────────────────────────────────
+# ─── Deteksi Python ───────────────────────────────────────────────────────────
+print_step "Mendeteksi runtime Python & Node.js..."
 PYTHON=""
-for cmd in python3 python; do
+for cmd in python3.11 python3.10 python3 python; do
   if command -v "$cmd" &>/dev/null; then PYTHON="$cmd"; break; fi
 done
-if [ -z "$PYTHON" ]; then print_error "Python not found! Install Python 3.10+"; exit 1; fi
-print_ok "Python: $($PYTHON --version)"
-
-# ─── Node.js check ────────────────────────────────────────────────────────────
-if ! command -v node &>/dev/null; then print_error "Node.js not found! Install Node.js 18+"; exit 1; fi
-print_ok "Node.js: $(node --version) / npm: $(npm --version)"
-
-# ─── Nix system packages (VNC + display) ─────────────────────────────────────
-print_step "Checking VNC/display system packages..."
-VNC_PKGS_OK=true
-for bin in Xvfb x11vnc fluxbox xsetroot xdpyinfo feh; do
-  if command -v "$bin" &>/dev/null; then
-    print_ok "$bin found: $(which $bin)"
-  else
-    print_warn "$bin not found — add to replit.nix"
-    VNC_PKGS_OK=false
-  fi
-done
-if [ "$VNC_PKGS_OK" = true ]; then
-  print_ok "All VNC/display packages ready"
+if [ -z "$PYTHON" ]; then
+  print_error "Python tidak ditemukan! Install Python 3.10+"
+  exit 1
 fi
+print_ok "Python: $($PYTHON --version 2>&1)"
 
-# ─── npm packages ─────────────────────────────────────────────────────────────
-print_step "Installing Node.js packages..."
-cd "$PROJECT_ROOT"
-npm install --legacy-peer-deps --no-audit 2>&1 | grep -E "added|updated|packages" | head -3 || true
-print_ok "Node.js packages ready"
+if ! command -v node &>/dev/null; then
+  print_error "Node.js tidak ditemukan! Install Node.js 18+"
+  exit 1
+fi
+print_ok "Node.js: $(node --version)  /  npm: $(npm --version)"
 
-# ─── Python packages (host — agent core) ────────────────────────────────────
-print_step "Installing Python packages..."
-
-PIP_FLAGS=""
+# ─── pip flags (kompatibel Replit / sistem modern) ────────────────────────────
+PIP_FLAGS="-q"
 if $PYTHON -m pip install --help 2>&1 | grep -q 'break-system'; then
-  PIP_FLAGS="--break-system-packages"
+  PIP_FLAGS="$PIP_FLAGS --break-system-packages"
 fi
 
-# Install from requirements.txt first (full list)
-if [ -f "$PROJECT_ROOT/requirements.txt" ]; then
-  echo "  Installing from requirements.txt..."
-  $PYTHON -m pip install $PIP_FLAGS -r "$PROJECT_ROOT/requirements.txt" -q 2>&1 | tail -3 || true
-  print_ok "requirements.txt packages installed"
+# ─── Node.js packages ─────────────────────────────────────────────────────────
+print_step "Menginstall Node.js packages (npm install)..."
+cd "$PROJECT_ROOT"
+npm install --legacy-peer-deps --no-audit --no-fund 2>&1 \
+  | grep -E "added|updated|packages|warn WARN" | head -5 || true
+print_ok "Node.js packages siap"
+
+# ─── Python packages — SATU PERINTAH, semua sekaligus ────────────────────────
+print_step "Menginstall SEMUA Python packages (satu kali install)..."
+print_info "pydantic · requests · aiohttp · httpx · beautifulsoup4"
+print_info "flask · flask-cors · playwright · e2b · redis · motor · anthropic · websockify"
+
+$PYTHON -m pip install $PIP_FLAGS \
+  "pydantic>=2.0.0" \
+  "requests>=2.28.0" \
+  "aiohttp>=3.8.0" \
+  "httpx>=0.24.0" \
+  "beautifulsoup4>=4.12.0" \
+  "flask>=3.0.0" \
+  "flask-cors>=4.0.0" \
+  "playwright>=1.40.0" \
+  "e2b>=0.8.0" \
+  "redis>=5.0.0" \
+  "motor>=3.0.0" \
+  "anthropic>=0.40.0" \
+  "websockify>=0.10.0" \
+  2>&1 | tail -3
+
+print_ok "Semua Python packages berhasil diinstall"
+
+# ─── Verifikasi import setiap package ─────────────────────────────────────────
+print_step "Verifikasi import package..."
+FAILED=()
+
+check() {
+  local mod="$1" name="$2"
+  if $PYTHON -c "import $mod" &>/dev/null 2>&1; then
+    print_ok "$name"
+  else
+    print_warn "$name — gagal diimport (opsional atau perlu server)"
+    FAILED+=("$name")
+  fi
+}
+
+check "pydantic"    "pydantic"
+check "requests"    "requests"
+check "aiohttp"     "aiohttp"
+check "httpx"       "httpx"
+check "bs4"         "beautifulsoup4"
+check "flask"       "flask"
+check "flask_cors"  "flask-cors"
+check "playwright"  "playwright"
+check "e2b"         "e2b"
+check "redis"       "redis"
+check "motor"       "motor"
+check "anthropic"   "anthropic"
+check "websockify"  "websockify"
+
+if [ ${#FAILED[@]} -eq 0 ]; then
+  print_ok "Semua package terverifikasi berhasil"
+else
+  print_warn "Package yang gagal diverifikasi: ${FAILED[*]}"
+  print_info "Ini normal untuk package yang butuh server (redis, motor) atau X11 (websockify)"
 fi
 
-# Ensure critical packages are at required versions
-PYTHON_PACKAGES=(
-  "pydantic>=2.0.0"
-  "playwright>=1.40.0"
-  "e2b>=2.0.0"
-  "httpx>=0.24.0"
-  "requests>=2.28.0"
-  "aiohttp>=3.8.0"
-  "beautifulsoup4>=4.12.0"
-  "redis>=5.0.0"
-  "motor>=3.0.0"
-  "flask>=3.0.0"
-  "flask-cors>=4.0.0"
-  "websockify>=0.10.0"
-)
+# ─── Playwright Chromium browser ──────────────────────────────────────────────
+print_step "Menginstall Playwright Chromium browser..."
+if $PYTHON -m playwright install chromium 2>&1 | grep -v "^$"; then
+  print_ok "Playwright Chromium siap"
+else
+  print_warn "Playwright browser gagal. Coba manual:"
+  print_info "python3 -m playwright install chromium"
+fi
 
-for pkg in "${PYTHON_PACKAGES[@]}"; do
-  pkg_name="${pkg%%[>=<]*}"
-  if ! $PYTHON -c "import ${pkg_name//-/_}" &>/dev/null 2>&1; then
-    echo -n "  Installing $pkg_name..."
-    $PYTHON -m pip install $PIP_FLAGS "$pkg" -q 2>&1 | tail -1 || true
-    print_ok "$pkg_name installed"
+# ─── VNC / Display stack (opsional) ───────────────────────────────────────────
+print_step "Cek sistem VNC/display (opsional — butuh replit.nix)..."
+VNC_MISSING=()
+for bin in Xvfb x11vnc fluxbox; do
+  if command -v "$bin" &>/dev/null; then
+    print_ok "$bin → $(which "$bin")"
+  else
+    print_warn "$bin tidak ditemukan (opsional, tambahkan ke replit.nix jika butuh VNC)"
+    VNC_MISSING+=("$bin")
   fi
 done
+if [ ${#VNC_MISSING[@]} -eq 0 ]; then
+  print_ok "Stack VNC siap (Xvfb + x11vnc + fluxbox)"
 
-print_ok "All Python packages ready"
-
-# ─── Playwright browser ───────────────────────────────────────────────────────
-print_step "Installing Playwright browser (Chromium)..."
-
-# Try to install without --with-deps (Replit doesn't support apt)
-if $PYTHON -m playwright install chromium 2>&1; then
-  print_ok "Playwright Chromium ready"
-  CHROME_BIN=""
-  for search_dir in "chrome-linux64" "chrome-linux"; do
-    CHROME_BIN=$(find "$PROJECT_ROOT/.cache/ms-playwright" -path "*/$search_dir/chrome" -type f 2>/dev/null | head -1)
-    if [ -n "$CHROME_BIN" ]; then break; fi
-  done
-  if [ -n "$CHROME_BIN" ]; then
-    print_ok "Chrome binary: $CHROME_BIN"
-  else
-    print_warn "Chrome binary not found in .cache/ms-playwright"
-  fi
-else
-  print_warn "Playwright chromium install skipped (system deps not available)"
-  print_warn "Run manually: python3 -m playwright install chromium"
-fi
-
-# ─── Fluxbox kiosk config (MouseFocus + no decorations) ────────────────────
-print_step "Configuring Fluxbox window manager (kiosk mode)..."
-FBDIR="$HOME/.fluxbox"
-mkdir -p "$FBDIR"
-cat > "$FBDIR/init" <<'EOF'
+  # Konfigurasi Fluxbox kiosk mode (tanpa toolbar, semua window maximized)
+  FBDIR="$HOME/.fluxbox"
+  mkdir -p "$FBDIR"
+  cat > "$FBDIR/init" <<'FBINIT'
 session.screen0.toolbar.visible: false
 session.screen0.toolbar.autoHide: true
-session.screen0.toolbar.widthPercent: 0
 session.screen0.slit.autoHide: true
 session.screen0.defaultDeco: NONE
 session.screen0.workspaces: 1
-session.screen0.window.focus.alpha: 255
-session.screen0.window.unfocus.alpha: 255
-session.screen0.tabs.usePixmap: false
 session.screen0.focusModel: MouseFocus
 session.screen0.autoRaise: true
 session.screen0.clickRaises: true
 session.styleFile: /dev/null
-EOF
-cat > "$FBDIR/apps" <<'EOF'
+FBINIT
+  cat > "$FBDIR/apps" <<'FBAPPS'
 [app] (name=.*) (class=.*)
   [Maximized] {yes}
   [Deco] {NONE}
   [Dimensions] {1280 720}
   [Position] {0 0}
 [end]
-EOF
-print_ok "Fluxbox configured: MouseFocus, no toolbar, no decorations, all windows maximized"
-
-# ─── E2B Sandbox check ────────────────────────────────────────────────────────
-print_step "Checking E2B cloud sandbox..."
-if [ -n "${E2B_API_KEY:-}" ]; then
-  print_ok "E2B_API_KEY is set — cloud sandbox enabled"
-  echo -e "    ${CYAN}Sandbox auto-installs: reportlab, python-docx, openpyxl, Pillow${NC}"
-else
-  print_warn "E2B_API_KEY not set — shell/code tools will run locally"
-  print_warn "Set via: export E2B_API_KEY=your-key (or add to Replit Secrets)"
+FBAPPS
+  print_ok "Fluxbox dikonfigurasi: kiosk mode, tanpa dekorasi"
 fi
 
-# ─── Dzeck files directory ────────────────────────────────────────────────────
-print_step "Creating runtime directories..."
-mkdir -p /tmp/dzeck_files
-mkdir -p /tmp/dzeck_files/uploads
-print_ok "/tmp/dzeck_files ready (downloadable files stored here)"
+# ─── E2B Sandbox status ────────────────────────────────────────────────────────
+print_step "Cek E2B cloud sandbox..."
+if [ -n "${E2B_API_KEY:-}" ]; then
+  print_ok "E2B_API_KEY terdeteksi — cloud sandbox aktif"
+  print_info "Sandbox auto-install: reportlab, python-docx, openpyxl, Pillow"
+else
+  print_warn "E2B_API_KEY belum diset — shell/code tools jalan lokal"
+  print_info "Set via Replit Secrets: E2B_API_KEY"
+fi
+
+# ─── Runtime directories ──────────────────────────────────────────────────────
+print_step "Membuat runtime directories..."
+mkdir -p /tmp/dzeck_files /tmp/dzeck_files/uploads
+print_ok "/tmp/dzeck_files/ siap (file hasil agent disimpan di sini)"
 
 # ─── .env file ────────────────────────────────────────────────────────────────
-print_step "Checking .env configuration..."
+print_step "Cek konfigurasi .env..."
 if [ ! -f "$PROJECT_ROOT/.env" ]; then
-  if [ -f "$PROJECT_ROOT/.env.example" ]; then
-    cp "$PROJECT_ROOT/.env.example" "$PROJECT_ROOT/.env"
-    print_warn ".env created from .env.example — set CF_API_KEY, CF_ACCOUNT_ID, CF_GATEWAY_NAME, E2B_API_KEY"
-  else
-    cat > "$PROJECT_ROOT/.env" <<'EOF'
-# ─── Cloudflare AI Gateway — REQUIRED ────────────────────────────────────────
+  cat > "$PROJECT_ROOT/.env" <<'DOTENV'
+# ─── Dzeck AI — Environment Variables ────────────────────────────────────────
+
+# Cloudflare Workers AI (WAJIB)
 CF_API_KEY=
 CF_ACCOUNT_ID=
 CF_GATEWAY_NAME=
 
-# ─── Model selection ─────────────────────────────────────────────────────────
+# Model (opsional, sudah ada default di kode)
 CF_MODEL=@cf/qwen/qwen3-30b-a3b-fp8
 CF_AGENT_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast
 
-# ─── E2B Cloud Sandbox ───────────────────────────────────────────────────────
+# E2B Cloud Sandbox (untuk shell_exec & browser di sandbox)
 E2B_API_KEY=
 
-# ─── MCP Server (optional) ───────────────────────────────────────────────────
+# Anthropic (untuk Orchestrator multi-agent)
+ANTHROPIC_API_KEY=
+
+# MongoDB (opsional — untuk session persistence)
+MONGODB_URI=
+
+# Redis (opsional — untuk caching)
+REDIS_PASSWORD=
+
+# Session
+SESSION_SECRET=
+
+# MCP Server (opsional)
 MCP_SERVER_URL=https://mcp.cloudflare.com/mcp
 MCP_AUTH_TOKEN=
 
-# ─── Browser ─────────────────────────────────────────────────────────────────
+# Browser
 PLAYWRIGHT_ENABLED=true
 
-# ─── Server ──────────────────────────────────────────────────────────────────
+# Server
 PORT=5000
 NODE_ENV=development
-EOF
-    print_warn ".env created — fill in CF_API_KEY, CF_ACCOUNT_ID, CF_GATEWAY_NAME, E2B_API_KEY"
-  fi
+DOTENV
+  print_warn ".env baru dibuat — isi CF_API_KEY, E2B_API_KEY, ANTHROPIC_API_KEY"
 else
-  print_ok ".env file exists"
+  print_ok ".env sudah ada"
 fi
 
-# ─── Cleanup stale pycache ────────────────────────────────────────────────────
-print_step "Cleaning stale __pycache__..."
-find "$PROJECT_ROOT/server/agent" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-print_ok "Python cache cleaned"
+# ─── Bersihkan Python cache lama ──────────────────────────────────────────────
+print_step "Membersihkan __pycache__ lama..."
+find "$PROJECT_ROOT/server/agent" -type d -name "__pycache__" \
+  -exec rm -rf {} + 2>/dev/null || true
+print_ok "Python cache dibersihkan"
 
-# ─── Architecture summary ────────────────────────────────────────────────────
+# ─── Rangkuman Arsitektur ─────────────────────────────────────────────────────
 echo ""
 echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}${BOLD}║  Architecture — Tool Dispatch & Runtime                      ║${NC}"
+echo -e "${CYAN}${BOLD}║  Arsitektur Multi-Agent Dzeck AI (March 2026)                ║${NC}"
 echo -e "${CYAN}${BOLD}╠══════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}${BOLD}║  Browser     → VNC CDP (port 9222) > Headless > E2B > HTTP   ║${NC}"
-echo -e "${CYAN}${BOLD}║  Shell/Code  → E2B cloud sandbox (isolated, safe)            ║${NC}"
-echo -e "${CYAN}${BOLD}║  File I/O    → /home/user/dzeck-ai/ (workspace)               ║${NC}"
-echo -e "${CYAN}${BOLD}║  Search      → DuckDuckGo (no API key needed)               ║${NC}"
-echo -e "${CYAN}${BOLD}║  MCP         → Cloudflare MCP (OAuth token optional)         ║${NC}"
+echo -e "${CYAN}${BOLD}║  Orchestrator → routing tiap step ke agent yang tepat        ║${NC}"
+echo -e "${CYAN}${BOLD}║  Web Agent   → browser automation, scraping, search          ║${NC}"
+echo -e "${CYAN}${BOLD}║  Data Agent  → analisis data, API datasource, visualisasi    ║${NC}"
+echo -e "${CYAN}${BOLD}║  Code Agent  → Python/shell exec, scripting, automasi        ║${NC}"
+echo -e "${CYAN}${BOLD}║  Files Agent → manajemen file, dokumen, konversi format      ║${NC}"
 echo -e "${CYAN}${BOLD}╠══════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}${BOLD}║  VNC Stack   → Xvfb :10 → Fluxbox → x11vnc :5910            ║${NC}"
-echo -e "${CYAN}${BOLD}║  CDP         → Chromium --remote-debugging-port=9222         ║${NC}"
-echo -e "${CYAN}${BOLD}║  Sandbox Pkgs→ reportlab, python-docx, openpyxl, Pillow      ║${NC}"
+echo -e "${CYAN}${BOLD}║  Browser     → E2B sandbox > Playwright headless > HTTP      ║${NC}"
+echo -e "${CYAN}${BOLD}║  Shell/Code  → E2B cloud sandbox (isolated, aman)            ║${NC}"
+echo -e "${CYAN}${BOLD}║  LLM Agent   → @cf/meta/llama-3.3-70b-instruct-fp8-fast      ║${NC}"
+echo -e "${CYAN}${BOLD}║  LLM Chat    → @cf/qwen/qwen3-30b-a3b-fp8                   ║${NC}"
+echo -e "${CYAN}${BOLD}║  Orchestrtr  → claude-opus-4-5 (Anthropic API)              ║${NC}"
 echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
 
-# ─── Done ─────────────────────────────────────────────────────────────────────
+# ─── Selesai ──────────────────────────────────────────────────────────────────
 echo ""
-echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}${BOLD}║   Setup selesai! Dzeck AI siap digunakan ║${NC}"
-echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════╝${NC}"
+echo -e "${GREEN}${BOLD}╔═════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}${BOLD}║  ✓  Setup SELESAI! Dzeck AI siap digunakan  ║${NC}"
+echo -e "${GREEN}${BOLD}╚═════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  ${BOLD}Mulai server:${NC}"
-echo -e "    ${CYAN}npm run server:dev${NC}     → http://localhost:5000"
+echo -e "  ${BOLD}Mulai server:${NC}      ${CYAN}npm run dev${NC}   →   http://localhost:5000"
 echo ""
-echo -e "  ${BOLD}Model AI aktif:${NC}"
-echo -e "    ${GREEN}Chat:  @cf/qwen/qwen3-30b-a3b-fp8${NC}"
-echo -e "    ${GREEN}Agent: @cf/meta/llama-3.3-70b-instruct-fp8-fast${NC}"
-echo ""
-echo -e "  ${BOLD}Python host deps:${NC}"
-echo -e "    ${CYAN}pydantic, playwright, e2b, httpx, requests, aiohttp, beautifulsoup4${NC}"
-echo -e "    ${CYAN}Optional: redis (cache), motor (sessions), flask (web)${NC}"
-echo ""
-echo -e "  ${BOLD}E2B sandbox deps (auto-installed):${NC}"
-echo -e "    ${CYAN}reportlab, python-docx, openpyxl, Pillow${NC}"
+echo -e "  ${BOLD}Python packages:${NC}"
+echo -e "    ${CYAN}pydantic, requests, aiohttp, httpx, beautifulsoup4${NC}"
+echo -e "    ${CYAN}flask, flask-cors, playwright, e2b, redis, motor${NC}"
+echo -e "    ${CYAN}anthropic, websockify${NC}"
 echo ""
 echo -e "  ${BOLD}Konfigurasi:${NC}"
-echo -e "    Edit ${CYAN}.env${NC} → CF_API_KEY, CF_ACCOUNT_ID, CF_GATEWAY_NAME, E2B_API_KEY"
+echo -e "    Edit ${CYAN}.env${NC}  →  CF_API_KEY, E2B_API_KEY, ANTHROPIC_API_KEY, dll."
 echo ""
