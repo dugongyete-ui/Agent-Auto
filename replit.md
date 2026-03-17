@@ -19,6 +19,15 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - Do not make changes to the `app/` folder without explicit instruction.
 - All prompts should be in Bahasa Indonesia by default.
 
+## Recent Updates (March 2026 — Session 9: Code Audit & Cleanup)
+- **Dead Code Removed:** File-file yang didefinisikan tapi tidak pernah digunakan/dipanggil dihapus:
+  - `server/routes.ts.backup` → File backup lama dari routes, sudah tidak relevan.
+  - `server/static.ts` → `serveStatic()` tidak pernah dipanggil oleh `server/index.ts`. Server melayani file statis langsung lewat `configureExpoAndLanding`.
+  - `server/vite.ts` → `setupVite()` tidak pernah dipanggil oleh `server/index.ts`. UI utama adalah `web-chat.html`, bukan Vite/React dev server.
+- **Missing Dependencies Installed:** `multer` dan `qrcode-terminal` diinstall (keduanya digunakan di `server/routes.ts` dan `server/index.ts` tapi belum terinstall).
+- **Architecture Verified:** Arsitektur project diverifikasi sudah sesuai dengan diagram System Architecture — User Interface (web-chat.html) → Backend (routes.ts) → Python Agent (agent_flow.py) → Multi-Agent Pool (Web/Data/Code/Files) → Tools (browser/shell/file/search) → Output.
+- **Files Preserved (Intentional):** `server/g4f_chat.py` (standalone Python script buatan user, tidak terhubung ke routes tapi dibiarkan), `server/storage.ts` + `shared/schema.ts` (scaffold DB user yang belum terhubung ke routes, dibiarkan untuk pengembangan berikutnya), `client/` directory (React/Vite app yang tidak di-serve oleh server saat ini — UI utama ada di web-chat.html).
+
 ## Recent Updates (March 2026 — Session 8: Infrastructure Restoration & Sync)
 - **server/routes.ts restored:** Dikembalikan ke versi lengkap dari git history (commit b0edeb0) — 826 baris penuh dengan multer file upload, VNC WebSocket proxy, E2B sandbox status endpoint, `handleVncUpgrade` export, error handler untuk spawn Python.
 - **server/index.ts restored:** Dikembalikan ke versi asli — CORS setup, multi-port (5000/8081/8082), serve `web-chat.html` di root, QR code Expo Go, dynamic manifest routing.
