@@ -1,0 +1,52 @@
+Create an orchestrator.py file for the Manus autonomous agent system with the following exact structure and logic.
+
+IMPORTS AND DEPENDENCIES
+Use these libraries: os, uuid, json, time, enum.Enum, typing.Optional, and anthropic.Anthropic.
+
+EVENT TYPES
+Create an EventType enum with exactly 6 values: MESSAGE for user input messages, ACTION for tool use function calling, OBSERVATION for results from action execution, PLAN for task step planning and status updates from the planner module, KNOWLEDGE for best practices from the knowledge module, DATASOURCE for data API documentation, and SYSTEM for miscellaneous system events.
+
+AGENT TYPES
+Create an AgentType enum with exactly 4 values: WEB, FILE, DATA, and CODE.
+
+TASK STATUS
+Create a TaskStatus enum with exactly 5 values: RUNNING, IDLE, WAITING for when the agent asked the user a question, ERROR, and COMPLETE.
+
+SYSTEM PROMPTS
+Create 5 system prompt string variables named exactly as follows.
+
+WEB_AGENT_SYSTEM_PROMPT must contain these browser rules: always use browser tools to access all URLs provided by users, always use browser tools to access URLs from search results, actively explore valuable links by clicking elements or accessing URLs directly, browser tools only return elements in visible viewport by default, visible elements are returned as index tag text format where index is used for interactive actions, not all interactive elements may be identified so use coordinates for unlisted elements, browser tools automatically extract page content in Markdown format when possible, if extracted Markdown is complete no scrolling is needed otherwise actively scroll to view full page, suggest user to take over browser for sensitive operations. Also include information rules: priority order is authoritative datasource API first then web search then model internal knowledge, search snippets are not valid sources and original pages must be visited, access multiple URLs for cross-validation, search each attribute of a single entity separately.
+
+FILE_AGENT_SYSTEM_PROMPT must contain these file rules: always use file tools for reading writing appending and editing to avoid string escape issues, actively save intermediate results in separate files, use append mode when merging text files, never use list formats in any file except todo.md, always provide relevant files as attachments since users cannot access the local filesystem directly.
+
+DATA_AGENT_SYSTEM_PROMPT must contain these datasource rules: only use data APIs that exist in the event stream and never fabricate APIs, prioritize APIs over public internet, API costs are covered by the system with no login needed, APIs must be called through Python code only not as direct tools, Python libraries for APIs are pre-installed, always save retrieved data to files never print as intermediate output. Also include information priority rules in same order as above and step by step search rules.
+
+CODE_AGENT_SYSTEM_PROMPT must contain these coding rules: always save code to files before execution and never pass raw code to interpreter commands directly, write Python for all complex math and analysis, use search tools for unfamiliar problems, for index.html referencing local resources use deployment tools or package into zip. Also include shell rules: avoid confirmation prompts and always use -y or -f flags, save excessive output to files, chain commands with && to minimize interruptions, use pipe operator to simplify operations, use bc for simple math and Python for complex math never calculate mentally. Also include sandbox environment details: Ubuntu 22.04 linux amd64 with internet, user ubuntu with sudo privileges, home directory /home/ubuntu, Python 3.10.12 and Node.js 20.18.0 pre-installed, sandbox automatically sleeps and wakes up when inactive.
+
+ORCHESTRATOR_SYSTEM_PROMPT must contain the full Manus identity and capabilities including all 6 tasks the agent excels at, language settings with English as default and instruction to follow user specified language, the full 6-step agent loop from analyze events through enter standby, planner module rules, todo rules, message rules, writing rules with continuous prose and no bullet points, error handling rules, and tool use rules including that plain text responses are forbidden and tool names must never be mentioned to users.
+
+AGENT KEYWORD ROUTING MAP
+Create a dictionary named KEYWORD_MAP inside the AgentRouter class that maps each AgentType to a list of trigger keywords. WEB agent keywords: browse, search, url, website, web, scrape, extract, navigate, http, internet, page, link. FILE agent keywords: file, read, write, save, load, folder, directory, path, document, upload, download, zip. DATA agent keywords: data, analyze, analysis, chart, graph, plot, dataset, csv, excel, statistics, api, database. CODE agent keywords: code, script, run, execute, python, javascript, install, debug, automate, shell, terminal, bash.
+
+TASK SESSION CLASS
+Create a TaskSession class that stores: task_id string, language string defaulting to English, status as TaskStatus starting at RUNNING, event_stream as empty list, messages as empty list, current_step integer starting at 0, total_steps integer starting at 0, result as None, attachments as empty list, todo as empty list, and created_at as current timestamp. Include an add_event method that creates an event dictionary with id using first 8 characters of a new uuid, type, content, role, and timestamp, appends it to event_stream, and returns it. Include a to_dict method that returns task_id, status value, current_step, total_steps, result, attachments, event_count, and created_at.
+
+PLANNER MODULE CLASS
+Create a PlannerModule class that takes an Anthropic client in its constructor. Include a create_plan method that calls the LLM with a system prompt instructing it to break the task into numbered pseudocode steps and return only a JSON array of step strings, parses the response stripping json markdown fences, sets session total_steps to the length of steps, sets session todo to a list of dictionaries each with step and done set to False, injects a PLAN event into the event stream with all steps joined by newlines, and returns the steps list. Include an update_step method that sets session current_step to step_index plus 1, marks the corresponding todo item as done True, and injects a PLAN event with a JSON object containing current_step, status set to completed, and reflection.
+
+AGENT ROUTER CLASS
+Create an AgentRouter class with a route method that takes a task description string, converts it to lowercase, scores each AgentType by counting how many of its keywords appear in the description, returns the AgentType with the highest score, and defaults to WEB agent if no keywords match.
+
+SPECIALIST AGENT CLASS
+Create a SpecialistAgent class that takes agent_type and Anthropic client in its constructor and sets system_prompt from the AGENT_PROMPTS dictionary. Include an execute method that builds a messages list with the step, full task context from the first event in the event stream, and the session language, calls the LLM with the agent's system prompt, logs an ACTION event with the agent type and step description, logs an OBSERVATION event with the result text, and returns the result text.
+
+ORCHESTRATOR CLASS
+Create an Orchestrator class that initializes an Anthropic client using the ANTHROPIC_API_KEY environment variable, a PlannerModule, an AgentRouter, and an empty sessions dictionary. Include these public methods: create_task that generates a uuid task_id, creates a new TaskSession, stores it in sessions, and returns the task_id. get_status that retrieves the session and returns session.to_dict(). get_result that retrieves the session and returns a dictionary with task_id, status value, result, attachments, and todo. reply_to_agent that retrieves the session, adds a MESSAGE event with the user reply, and sets status back to RUNNING. run_task that retrieves the session, gets the user message from the first event, calls planner create_plan, iterates through each step, routes each step to the correct agent type, creates a SpecialistAgent and calls execute, calls planner update_step after each step, after all steps calls the private _compile_results method, sets session result to the compiled output, and sets status to COMPLETE, with a try-except that sets status to ERROR and result to the error message on any exception. Include a private _compile_results method that joins all step results with step numbers, calls the LLM with the ORCHESTRATOR_SYSTEM_PROMPT instructing it to synthesize all results into coherent detailed prose without bullet points in the session language, and returns the response text. Include a private _get_session method that raises ValueError if task_id not found and otherwise returns the session.
+
+AGENT PROMPTS DICTIONARY
+Create a dictionary named AGENT_PROMPTS that maps each AgentType to its corresponding system prompt variable.
+
+ENTRY POINT
+Add an if __name__ equals main block that creates an Orchestrator instance, calls create_task with a sample research message and English language, prints the task_id, calls run_task, calls get_result, and prints the status and result.
+
+Use claude-opus-4-5 as the model string for all LLM calls. Use max_tokens 1024 for the planner and 2048 for specialist agents and 4096 for the final compilation.
