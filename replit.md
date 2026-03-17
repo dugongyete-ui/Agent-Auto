@@ -19,6 +19,24 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - Do not make changes to the `app/` folder without explicit instruction.
 - All prompts should be in Bahasa Indonesia by default.
 
+## Recent Updates (March 2026 — Session 7: Multi-Agent Architecture)
+- **Multi-Agent Coordination Layer:** Sistem Dzeck AI sekarang menggunakan 4 specialized agents yang dikoordinasikan oleh Orchestration Layer.
+  - `server/agent/prompts/agents/web_agent.py` — Web Agent (Browsing & Extraction): spesialis browser automation, pencarian internet, scraping. Tools: browser_*, info_search_web, web_search, web_browse.
+  - `server/agent/prompts/agents/data_agent.py` — Data Agent (Analysis & API): spesialis analisis data, API access, sintesis informasi. Tools: info_search_web, browser_*, file_*, shell_exec.
+  - `server/agent/prompts/agents/code_agent.py` — Code Agent (Python & Automation): spesialis penulisan/eksekusi kode Python, file binary. Tools: shell_*, file_*.
+  - `server/agent/prompts/agents/files_agent.py` — Files Agent (Management & Processing): spesialis manajemen file, dokumen teks. Tools: file_*, shell_exec.
+  - `server/agent/prompts/agents/orchestrator.py` — Orchestrator sistem: koordinasi antar agents dan aturan penugasan.
+- **AgentType Enum:** `server/agent/models/plan.py` — Ditambahkan `AgentType` enum (WEB, DATA, CODE, FILES, GENERAL) dan field `agent_type: str` ke model `Step`. Step sekarang membawa informasi agent yang harus menanganinya.
+- **Planner Updated:** `server/agent/prompts/planner.py` — Planner sekarang menghasilkan `agent_type` untuk setiap step dalam JSON output, baik `CREATE_PLAN_PROMPT` maupun `UPDATE_PLAN_PROMPT`. Ditambahkan panduan routing Multi-Agent Coordination Layer di system prompt.
+- **Agent Flow Multi-Agent Execution:** `server/agent/agent_flow.py` — Ditambahkan:
+  - `_AGENT_CONTEXT_MAP`: mapping agent_type → (system_prompt, allowed_tools)
+  - `_AGENT_DISPLAY_NAMES`: display names untuk UI notification  
+  - `_get_agent_context()`: helper mendapatkan system prompt dan tool list per agent
+  - `_filter_tool_schemas()`: memfilter TOOL_SCHEMAS sesuai tools yang diizinkan per agent
+  - `run_planner_async`: parse `agent_type` dari step JSON planner
+  - `update_plan_async`: parse `agent_type` dari updated steps
+  - `execute_step_async`: menggunakan agent-specific system prompt (`_agent_sys_prompt`) dan tool schemas yang difilter (`_agent_tool_schemas`) per step. Emit notify event menampilkan agent mana yang menangani langkah.
+
 ## Recent Updates (March 2026 — Session 6: Agent Transparency Overhaul)
 - **System Prompt Transparency:** `server/agent/prompts/system.py` — Updated `<agent_loop>` steps 2, 3, 5 to require explicit reporting via `message_notify_user` before/after tool calls. Updated `<agent_behavior>` with new points: "Pelaporan Aksi Eksplisit" (report tool+args before exec), "Pelaporan Hasil Aksi" (report results after exec), "Penanganan Kesalahan Transparan" (report errors and fix strategy). Added new blocks: `<reporting_rules>`, `<sandbox_best_practices>`, `<transparency_checklist>`.
 - **File Write Content Preview:** `server/agent/tools/file.py` — `file_write` now returns first 1000 chars of written content in both `message` (as Markdown code block with language hint) and `data.content_preview` field. Language detection from file extension for syntax-aware preview.

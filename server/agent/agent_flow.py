@@ -84,6 +84,10 @@ from server.agent.prompts.execution import (
     EXECUTION_PROMPT,
     SUMMARIZE_PROMPT,
 )
+from server.agent.prompts.agents.web_agent import WEB_AGENT_SYSTEM_PROMPT, WEB_AGENT_TOOLS
+from server.agent.prompts.agents.data_agent import DATA_AGENT_SYSTEM_PROMPT, DATA_AGENT_TOOLS
+from server.agent.prompts.agents.code_agent import CODE_AGENT_SYSTEM_PROMPT, CODE_AGENT_TOOLS
+from server.agent.prompts.agents.files_agent import FILES_AGENT_SYSTEM_PROMPT, FILES_AGENT_TOOLS
 
 
 class FlowState(str, Enum):
@@ -154,6 +158,43 @@ def _build_tool_schemas() -> List[Dict[str, Any]]:
 
 TOOL_SCHEMAS: List[Dict[str, Any]] = _build_tool_schemas()
 
+
+# ── Multi-Agent Context Helpers ────────────────────────────────────────────────
+
+_AGENT_CONTEXT_MAP: Dict[str, tuple] = {
+    "web": (WEB_AGENT_SYSTEM_PROMPT, WEB_AGENT_TOOLS),
+    "data": (DATA_AGENT_SYSTEM_PROMPT, DATA_AGENT_TOOLS),
+    "code": (CODE_AGENT_SYSTEM_PROMPT, CODE_AGENT_TOOLS),
+    "files": (FILES_AGENT_SYSTEM_PROMPT, FILES_AGENT_TOOLS),
+    "general": (EXECUTION_SYSTEM_PROMPT, None),
+}
+
+_AGENT_DISPLAY_NAMES: Dict[str, str] = {
+    "web": "Web Agent (Browsing & Extraction)",
+    "data": "Data Agent (Analysis & API)",
+    "code": "Code Agent (Python & Automation)",
+    "files": "Files Agent (Management & Processing)",
+    "general": "Execution Agent",
+}
+
+
+def _get_agent_context(agent_type: str) -> tuple:
+    """Return (system_prompt, allowed_tools_list_or_None) for the given agent type."""
+    return _AGENT_CONTEXT_MAP.get(agent_type, _AGENT_CONTEXT_MAP["general"])
+
+
+def _filter_tool_schemas(allowed_tools: Optional[List[str]]) -> List[Dict[str, Any]]:
+    """Filter TOOL_SCHEMAS to only the tools allowed for this agent.
+    
+    'idle' is always included so the agent can finish a step.
+    If allowed_tools is None, return all schemas (no filter).
+    """
+    if allowed_tools is None:
+        return TOOL_SCHEMAS
+    allowed_set = set(allowed_tools)
+    allowed_set.add("idle")  # always allow idle
+    allowed_set.add("task_complete")  # always allow task_complete
+    return [s for s in TOOL_SCHEMAS if s.get("name") in allowed_set]
 
 
 def make_event(event_type: str, **data: Any) -> Dict[str, Any]:
@@ -961,7 +1002,11 @@ class DzeckAgent:
             )
 
         steps = [
-            Step(id=str(s.get("id", "")), description=s.get("description", ""))
+            Step(
+                id=str(s.get("id", "")),
+                description=s.get("description", ""),
+                agent_type=s.get("agent_type", "general"),
+            )
             for s in parsed.get("steps", [])
         ]
         if not steps:
@@ -1276,6 +1321,16 @@ class DzeckAgent:
         step.status = ExecutionStatus.RUNNING
         yield make_event("step", status=StepStatus.RUNNING.value, step=step.to_dict())
 
+        # ── Multi-Agent: determine which specialized agent handles this step ──
+        _agent_type = str(step.agent_type or "general").lower()
+        _agent_sys_prompt, _agent_allowed_tools = _get_agent_context(_agent_type)
+        _agent_tool_schemas = _filter_tool_schemas(_agent_allowed_tools)
+        _agent_display = _AGENT_DISPLAY_NAMES.get(_agent_type, "Execution Agent")
+
+        # Notify user which agent is taking over this step
+        if _agent_type not in ("general",):
+            yield make_event("notify", text="[{}] menangani langkah ini...".format(_agent_display))
+
         context_parts: List[str] = []
         for s in plan.steps:
             if s.is_done() and s.result:
@@ -1343,7 +1398,7 @@ Available tools:
 ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
 """
         def _build_system_content() -> str:
-            return EXECUTION_SYSTEM_PROMPT + (_TEXT_TOOL_INSTRUCTION if _TOOLS_SUPPORTED is False else "")
+            return _agent_sys_prompt + (_TEXT_TOOL_INSTRUCTION if _TOOLS_SUPPORTED is False else "")
 
         exec_messages: List[Dict[str, Any]] = [
             {"role": "system", "content": _build_system_content()},
@@ -1369,7 +1424,7 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                 _msgs = list(exec_messages)
                 api_result = await loop.run_in_executor(
                     None,
-                    lambda: call_api_with_retry(_msgs, tools=TOOL_SCHEMAS),
+                    lambda: call_api_with_retry(_msgs, tools=_agent_tool_schemas),
                 )
                 text, tool_calls = _extract_cf_response(api_result)
 
@@ -1558,7 +1613,11 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
             parsed = self._parse_response(response_text)
             if parsed and "steps" in parsed:
                 new_steps = [
-                    Step(id=str(s.get("id", "")), description=s.get("description", ""))
+                    Step(
+                        id=str(s.get("id", "")),
+                        description=s.get("description", ""),
+                        agent_type=s.get("agent_type", "general"),
+                    )
                     for s in parsed["steps"]
                 ]
                 first_pending = None

@@ -1,6 +1,7 @@
 """
 Plan and Step models for the AI agent.
 Matching ai-manus Plan-Act architecture with Pydantic models.
+Multi-Agent Architecture: Each step can be assigned to a specialized agent.
 """
 import uuid
 from enum import Enum
@@ -15,6 +16,14 @@ class ExecutionStatus(str, Enum):
     FAILED = "failed"
 
 
+class AgentType(str, Enum):
+    WEB = "web"
+    DATA = "data"
+    CODE = "code"
+    FILES = "files"
+    GENERAL = "general"
+
+
 class Step(BaseModel):
     """A single step in an execution plan."""
 
@@ -25,6 +34,7 @@ class Step(BaseModel):
     error: Optional[str] = None
     success: bool = False
     attachments: List[str] = Field(default_factory=list)
+    agent_type: str = AgentType.GENERAL
 
     def is_done(self) -> bool:
         return self.status in (ExecutionStatus.COMPLETED, ExecutionStatus.FAILED)
