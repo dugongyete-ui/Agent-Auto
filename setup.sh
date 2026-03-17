@@ -194,9 +194,6 @@ CF_AGENT_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast
 # E2B Cloud Sandbox (untuk shell_exec & browser di sandbox)
 E2B_API_KEY=
 
-# Anthropic (untuk Orchestrator multi-agent)
-ANTHROPIC_API_KEY=
-
 # MongoDB (opsional — untuk session persistence)
 MONGODB_URI=
 
@@ -217,7 +214,7 @@ PLAYWRIGHT_ENABLED=true
 PORT=5000
 NODE_ENV=development
 DOTENV
-  print_warn ".env baru dibuat — isi CF_API_KEY, E2B_API_KEY, ANTHROPIC_API_KEY"
+  print_warn ".env baru dibuat — isi CF_API_KEY, E2B_API_KEY, MONGODB_URI, REDIS_PASSWORD"
 else
   print_ok ".env sudah ada"
 fi
