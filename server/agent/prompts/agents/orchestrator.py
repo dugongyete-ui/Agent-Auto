@@ -5,6 +5,7 @@ Full implementation of the Manus autonomous agent orchestrator with:
 - EventType, AgentType, TaskStatus enums
 - TaskSession, PlannerModule, AgentRouter, SpecialistAgent, Orchestrator classes
 - KEYWORD_MAP for routing, AGENT_PROMPTS dictionary
+- CloudflareClient: replaces Anthropic — all LLM calls via Cloudflare Workers AI Gateway
 - Entry point for standalone execution
 """
 
@@ -12,14 +13,116 @@ import os
 import uuid
 import json
 import time
+import urllib.request
+import urllib.error
 from enum import Enum
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
-try:
-    import anthropic as _anthropic
-    _HAS_ANTHROPIC = True
-except ImportError:
-    _HAS_ANTHROPIC = False
+
+# ── Cloudflare Workers AI Client (replaces Anthropic) ─────────────────────────
+
+class CloudflareClient:
+    """
+    Cloudflare Workers AI client — drop-in replacement for the Anthropic client.
+    All LLM calls go through Cloudflare AI Gateway using CF_API_KEY.
+    """
+
+    def __init__(self):
+        self.api_key = os.environ.get("CF_API_KEY", "")
+        self.account_id = os.environ.get("CF_ACCOUNT_ID", "")
+        self.gateway_name = os.environ.get("CF_GATEWAY_NAME", "dzeck")
+        self.model = (
+            os.environ.get("CF_AGENT_MODEL")
+            or os.environ.get("CF_MODEL")
+            or "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+        )
+
+    def _build_url(self) -> str:
+        return (
+            "https://gateway.ai.cloudflare.com/v1/"
+            f"{self.account_id}/{self.gateway_name}/workers-ai/run/{self.model}"
+        )
+
+    def complete(
+        self,
+        system: str,
+        messages: List[Dict[str, str]],
+        max_tokens: int = 4096,
+    ) -> str:
+        """Send request to Cloudflare Workers AI and return text response."""
+        cf_messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
+        cf_messages.extend(messages)
+
+        url = self._build_url()
+        body: Dict[str, Any] = {
+            "messages": cf_messages,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        data = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
+                "User-Agent": "DzeckAI-Orchestrator/1.0",
+            },
+            method="POST",
+        )
+
+        last_error: Optional[Exception] = None
+        for attempt in range(4):
+            try:
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    raw = resp.read().decode("utf-8")
+                result = json.loads(raw)
+                cf_result = result.get("result", result)
+                if isinstance(cf_result, dict):
+                    text = cf_result.get("response", "")
+                    if isinstance(text, dict):
+                        text = text.get("message") or text.get("text") or json.dumps(text)
+                    elif not isinstance(text, str):
+                        text = str(text)
+                    if not text:
+                        choices = result.get("choices", [])
+                        if choices:
+                            text = choices[0].get("message", {}).get("content", "")
+                    return text.strip()
+                return str(cf_result).strip()
+            except urllib.error.HTTPError as e:
+                last_error = e
+                if e.code == 429 or e.code >= 500:
+                    time.sleep(2 ** attempt)
+                else:
+                    raise
+            except Exception as e:
+                last_error = e
+                time.sleep(2 ** attempt)
+
+        raise RuntimeError(f"Cloudflare API failed after retries: {last_error}")
+
+    def complete_json(
+        self,
+        system: str,
+        messages: List[Dict[str, str]],
+        max_tokens: int = 2048,
+    ) -> Any:
+        """Send request and parse JSON from response."""
+        import re
+        raw = self.complete(system, messages, max_tokens)
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.strip("`")
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:].strip()
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            match = re.search(r'(\[.*\]|\{.*\})', cleaned, re.DOTALL)
+            if match:
+                return json.loads(match.group(1))
+            raise
 
 
 class EventType(str, Enum):
@@ -248,7 +351,7 @@ class TaskSession:
 
 
 class PlannerModule:
-    def __init__(self, client):
+    def __init__(self, client: CloudflareClient):
         self.client = client
 
     def create_plan(self, task: str, session: TaskSession) -> list:
@@ -256,23 +359,18 @@ class PlannerModule:
             "You are a task planner. Break the given task into clear numbered pseudocode steps. "
             "Return ONLY a JSON array of step strings. Example: [\"Step 1: ...\", \"Step 2: ...\"]"
         )
-        response = self.client.messages.create(
-            model="claude-opus-4-5",
-            max_tokens=1024,
+        steps = self.client.complete_json(
             system=system,
             messages=[{"role": "user", "content": task}],
+            max_tokens=1024,
         )
-        raw = response.content[0].text.strip()
-        if raw.startswith("```"):
-            raw = raw.strip("`")
-            if raw.startswith("json"):
-                raw = raw[4:].strip()
-        steps = json.loads(raw)
+        if not isinstance(steps, list):
+            steps = [str(steps)]
         session.total_steps = len(steps)
         session.todo = [{"step": s, "done": False} for s in steps]
         session.add_event(
             EventType.PLAN,
-            "\n".join(steps),
+            "\n".join(str(s) for s in steps),
             role="planner",
         )
         return steps
@@ -326,7 +424,7 @@ class AgentRouter:
 
 
 class SpecialistAgent:
-    def __init__(self, agent_type: AgentType, client):
+    def __init__(self, agent_type: AgentType, client: CloudflareClient):
         self.agent_type = agent_type
         self.client = client
         self.system_prompt = AGENT_PROMPTS[agent_type]
@@ -343,13 +441,11 @@ class SpecialistAgent:
             f"Language: {session.language}\n\n"
             "Execute this step and provide a detailed result."
         )
-        response = self.client.messages.create(
-            model="claude-opus-4-5",
-            max_tokens=2048,
+        result_text = self.client.complete(
             system=self.system_prompt,
             messages=[{"role": "user", "content": user_content}],
+            max_tokens=2048,
         )
-        result_text = response.content[0].text.strip()
 
         session.add_event(
             EventType.ACTION,
@@ -366,12 +462,7 @@ class SpecialistAgent:
 
 class Orchestrator:
     def __init__(self):
-        if not _HAS_ANTHROPIC:
-            raise ImportError(
-                "anthropic package is required. Install with: pip install anthropic"
-            )
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        self.client = _anthropic.Anthropic(api_key=api_key)
+        self.client = CloudflareClient()
         self.planner = PlannerModule(self.client)
         self.router = AgentRouter()
         self.sessions: dict = {}
@@ -434,13 +525,11 @@ class Orchestrator:
             f"Write in continuous prose without bullet points. "
             f"Provide a complete and unified answer to the original task."
         )
-        response = self.client.messages.create(
-            model="claude-opus-4-5",
-            max_tokens=4096,
+        return self.client.complete(
             system=ORCHESTRATOR_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": compile_prompt}],
+            max_tokens=4096,
         )
-        return response.content[0].text.strip()
 
     def _get_session(self, task_id: str) -> TaskSession:
         if task_id not in self.sessions:

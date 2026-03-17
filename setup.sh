@@ -21,8 +21,8 @@ echo ""
 echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}${BOLD}║     Dzeck AI — Setup & Install ALL Dependencies       ║${NC}"
 echo -e "${CYAN}${BOLD}║     Multi-Agent: Web · Data · Code · Files            ║${NC}"
-echo -e "${CYAN}${BOLD}║     LLM: llama-3.3-70b (Cloudflare Workers AI)        ║${NC}"
-echo -e "${CYAN}${BOLD}║     Orchestrator: claude-opus-4-5 (Anthropic)         ║${NC}"
+echo -e "${CYAN}${BOLD}║     LLM: Cloudflare Workers AI (llama-3.3-70b)        ║${NC}"
+echo -e "${CYAN}${BOLD}║     Orchestrator: Cloudflare Workers AI               ║${NC}"
 echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -60,7 +60,7 @@ print_ok "Node.js packages siap"
 # ─── Python packages — SATU PERINTAH, semua sekaligus ────────────────────────
 print_step "Menginstall SEMUA Python packages (satu kali install)..."
 print_info "pydantic · requests · aiohttp · httpx · beautifulsoup4"
-print_info "flask · flask-cors · playwright · e2b · redis · motor · anthropic · websockify"
+print_info "flask · flask-cors · playwright · e2b · redis · motor · websockify"
 
 $PYTHON -m pip install $PIP_FLAGS \
   "pydantic>=2.0.0" \
@@ -74,7 +74,6 @@ $PYTHON -m pip install $PIP_FLAGS \
   "e2b>=0.8.0" \
   "redis>=5.0.0" \
   "motor>=3.0.0" \
-  "anthropic>=0.40.0" \
   "websockify>=0.10.0" \
   2>&1 | tail -3
 
@@ -105,7 +104,6 @@ check "playwright"  "playwright"
 check "e2b"         "e2b"
 check "redis"       "redis"
 check "motor"       "motor"
-check "anthropic"   "anthropic"
 check "websockify"  "websockify"
 
 if [ ${#FAILED[@]} -eq 0 ]; then
@@ -245,7 +243,7 @@ echo -e "${CYAN}${BOLD}║  Browser     → E2B sandbox > Playwright headless > 
 echo -e "${CYAN}${BOLD}║  Shell/Code  → E2B cloud sandbox (isolated, aman)            ║${NC}"
 echo -e "${CYAN}${BOLD}║  LLM Agent   → @cf/meta/llama-3.3-70b-instruct-fp8-fast      ║${NC}"
 echo -e "${CYAN}${BOLD}║  LLM Chat    → @cf/qwen/qwen3-30b-a3b-fp8                   ║${NC}"
-echo -e "${CYAN}${BOLD}║  Orchestrtr  → claude-opus-4-5 (Anthropic API)              ║${NC}"
+echo -e "${CYAN}${BOLD}║  Orchestrtr  → Cloudflare Workers AI (llama-3.3-70b)        ║${NC}"
 echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
 
 # ─── Selesai ──────────────────────────────────────────────────────────────────
@@ -258,9 +256,8 @@ echo -e "  ${BOLD}Mulai server:${NC}      ${CYAN}npm run dev${NC}   →   http:/
 echo ""
 echo -e "  ${BOLD}Python packages:${NC}"
 echo -e "    ${CYAN}pydantic, requests, aiohttp, httpx, beautifulsoup4${NC}"
-echo -e "    ${CYAN}flask, flask-cors, playwright, e2b, redis, motor${NC}"
-echo -e "    ${CYAN}anthropic, websockify${NC}"
+echo -e "    ${CYAN}flask, flask-cors, playwright, e2b, redis, motor, websockify${NC}"
 echo ""
 echo -e "  ${BOLD}Konfigurasi:${NC}"
-echo -e "    Edit ${CYAN}.env${NC}  →  CF_API_KEY, E2B_API_KEY, ANTHROPIC_API_KEY, dll."
+echo -e "    Edit ${CYAN}.env${NC}  →  CF_API_KEY, E2B_API_KEY, MONGODB_URI, REDIS_PASSWORD, dll."
 echo ""
