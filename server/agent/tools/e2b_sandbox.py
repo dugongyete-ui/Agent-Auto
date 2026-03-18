@@ -171,11 +171,14 @@ def _create_sandbox() -> Optional[Any]:
 
             session_ws = get_session_workspace()
             sb.commands.run(
-                f"mkdir -p {WORKSPACE_DIR} {OUTPUT_DIR} {session_ws} /tmp/dzeck_output "
+                f"sudo mkdir -p {WORKSPACE_DIR} 2>/dev/null || mkdir -p {WORKSPACE_DIR} 2>/dev/null || true && "
+                f"sudo chown $(whoami):$(whoami) {WORKSPACE_DIR} 2>/dev/null || true && "
+                f"mkdir -p {OUTPUT_DIR} /tmp/dzeck_output "
                 f"{WORKSPACE_DIR}/skills {WORKSPACE_DIR}/Downloads {WORKSPACE_DIR}/upload && "
+                f"[ -n '{session_ws}' ] && mkdir -p {session_ws} || true && "
                 f"echo 'sandbox_ready=true\\nworkspace={WORKSPACE_DIR}\\noutput={OUTPUT_DIR}' > {WORKSPACE_DIR}/sandbox.txt && "
-                f"cd {session_ws} && echo 'workspace ready'",
-                timeout=15
+                f"echo 'workspace ready'",
+                timeout=20
             )
 
             _push_sandbox_configs(sb)
