@@ -19,6 +19,14 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - Do not make changes to the `app/` folder without explicit instruction.
 - All prompts should be in Bahasa Indonesia by default.
 
+## Recent Updates (March 2026 — Session 14: Syntax Validation Fix & File Delivery)
+- **`_validate_python_syntax` diperbaiki:** Sebelum menjalankan `py_compile`, kini memeriksa keberadaan file di E2B sandbox terlebih dahulu. Jika file tidak ada → pesan "file_not_found" yang jelas (bukan "syntax FAILED"). Juga handle "file_disappeared" jika sandbox reset di tengah jalan. Resolve path fallback: coba `exec_dir/script.py` → `WORKSPACE_DIR/script.py`.
+- **File dikirim di error path:** `run_async` kini emit `files` event sebelum `done` event di path exception — sehingga file yang sudah dibuat tetap terkirim ke user meski agent gagal.
+- **Scan workspace semua file:** `summarize_async` kini panggil `list_workspace_files()` (selain `list_output_files()`) — scan seluruh `/home/ubuntu/` (exclude hidden dirs, skills/, upload/) dan sync ke local. File baru yang belum di `_created_files` ditambahkan otomatis.
+- **`list_workspace_files` diperbarui:** Filter hidden dirs (`*/.*`) dan system paths (`skills/`, `upload/`, `sandbox.txt`) via `find` command di E2B.
+- **`file_str_replace` diperbaiki:** Saat E2B aktif, semua file kini `is_deliverable=True` (konsisten dengan `file_write`). Ditambahkan content preview di response message.
+- **`_MIME_MAP` diperluas:** Dari ~20 ke 60+ ekstensi — mencakup `.sh`, `.ipynb`, `.r`, `.go`, `.rs`, `.java`, `.cpp`, `.toml`, `.ini`, `.log`, archive formats (`.tar`, `.gz`, `.7z`), audio/video, data science formats (`.parquet`, `.pkl`, `.npy`, `.db`), dll.
+
 ## Recent Updates (March 2026 — Session 13: Manus Skill System Implementation)
 - **Skill System diimplementasikan:** Paket `skill-creator` dari Manus.im diekstrak dan ditempatkan di `server/agent/sandbox_config/skills/skill-creator/` dengan struktur lengkap: `SKILL.md`, `scripts/init_skill.py`, `scripts/quick_validate.py`, `references/`.
 - **System prompt diperbarui:** Ditambahkan `<skills_module>` yang mengajarkan Dzeck cara menemukan, memuat, dan menggunakan skills, serta cara membuat skill baru menggunakan `init_skill.py`.

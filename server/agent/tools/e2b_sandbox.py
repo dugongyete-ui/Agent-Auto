@@ -524,13 +524,20 @@ def sync_file_from_sandbox(sandbox_path: str, local_path: str = "") -> Optional[
 
 
 def list_workspace_files() -> list:
-    """List files in the E2B workspace directory."""
+    """List user-created files in the E2B workspace directory.
+    Excludes hidden dirs (.cache, .npm, .local, .config), skills/, upload/, and sandbox.txt."""
     sb = get_sandbox()
     if sb is None:
         return []
     try:
+        # Exclude hidden directories and system dirs to avoid noise
         result = sb.commands.run(
-            f"find {WORKSPACE_DIR} -type f -maxdepth 4 2>/dev/null | head -100",
+            f"find {WORKSPACE_DIR} -type f -maxdepth 4 "
+            r"-not -path '*/\.*' "
+            f"-not -path '{WORKSPACE_DIR}/skills/*' "
+            f"-not -path '{WORKSPACE_DIR}/upload/*' "
+            f"-not -name 'sandbox.txt' "
+            f"2>/dev/null | head -200",
             timeout=15
         )
         if result.stdout:

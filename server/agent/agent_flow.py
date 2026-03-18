@@ -1699,19 +1699,74 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
 
         output_files_info = "(tidak ada file output)"
         try:
-            from server.agent.tools.e2b_sandbox import list_output_files as _list_output, ensure_zip_output
+            from server.agent.tools.e2b_sandbox import (
+                list_output_files as _list_output,
+                list_workspace_files as _list_workspace,
+                sync_file_from_sandbox as _sync_from_sb,
+                ensure_zip_output,
+                OUTPUT_DIR as _OUTPUT_DIR,
+                WORKSPACE_DIR as _WS_DIR,
+            )
+            from server.agent.tools.file import _make_download_url, _get_files_dir, _MIME_MAP
+
             try:
                 ensure_zip_output()
             except Exception:
                 pass
+
+            # ── 1. Output dir files (primary deliverables) ──
             output_files = _list_output()
-            if output_files:
+            # ── 2. Workspace root files (scripts, docs, etc. not in /output/) ──
+            _deliverable_exts = set(_MIME_MAP.keys())
+            try:
+                workspace_files_raw = _list_workspace()
+            except Exception:
+                workspace_files_raw = []
+
+            # Filter workspace files: skip system/hidden/skills dirs
+            # Accept ALL file extensions — unknown ones get application/octet-stream
+            _skip_prefixes = (
+                f"{_WS_DIR}/skills/", f"{_WS_DIR}/.local", f"{_WS_DIR}/.cache",
+                f"{_WS_DIR}/.npm", f"{_WS_DIR}/.config", f"{_WS_DIR}/.bashrc",
+                f"{_WS_DIR}/.profile", f"{_WS_DIR}/upload/",
+            )
+            _skip_exact = {f"{_WS_DIR}/sandbox.txt"}
+            workspace_files = []
+            for wf in workspace_files_raw:
+                if wf in _skip_exact:
+                    continue
+                if any(wf.startswith(p) for p in _skip_prefixes):
+                    continue
+                if wf.startswith(_OUTPUT_DIR):
+                    continue  # already covered by output_files
+                # Accept all files — no extension filter
+                workspace_files.append(wf)
+
+            all_e2b_files = output_files + workspace_files
+
+            if all_e2b_files:
                 output_files_info = "\n".join(
-                    f"- {os.path.basename(f)} ({f})" for f in output_files
+                    f"- {os.path.basename(f)} ({f})" for f in all_e2b_files
                 )
-                for f in output_files:
-                    from server.agent.tools.shell import _sync_e2b_output_file
-                    _sync_e2b_output_file(f)
+                _files_base = _get_files_dir()
+                synced_fnames = {f.get("filename", "") for f in self._created_files}
+                for ef in all_e2b_files:
+                    fname = os.path.basename(ef)
+                    if not fname:
+                        continue
+                    if fname in synced_fnames:
+                        continue
+                    local_target = os.path.join(_files_base, fname)
+                    local = _sync_from_sb(ef, local_target)
+                    if local:
+                        durl = _make_download_url(local)
+                        self._created_files.append({
+                            "filename": fname,
+                            "path": local,
+                            "download_url": durl,
+                            "mime": _MIME_MAP.get(os.path.splitext(fname)[1].lower(), "application/octet-stream"),
+                        })
+                        synced_fnames.add(fname)
         except Exception:
             pass
 
@@ -2201,6 +2256,9 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                     pass
             yield make_event("error", error="Agent error: {}".format(e))
             traceback.print_exc(file=sys.stderr)
+            # ── Always emit created files even on error path ──
+            if self._created_files:
+                yield make_event("files", files=self._created_files)
             yield make_event("done", success=False, session_id=self.session_id)
 
 

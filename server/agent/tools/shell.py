@@ -355,45 +355,102 @@ def _auto_fix_python_syntax(script_path: str, error_msg: str, exec_dir: str) -> 
 
 def _validate_python_syntax(command: str, exec_dir: str = "/home/ubuntu") -> Optional[ToolResult]:
     """Pre-validate Python script syntax with up to 3 auto-fix attempts.
-    Returns ToolResult on failure after all attempts, None on success."""
+    Returns ToolResult on failure after all attempts, None on success.
+    Distinguishes between 'file not found' and actual syntax errors."""
     import re as _re
     match = _re.search(r'python[3]?\s+(?:-\w+\s+)*([^\s;|&]+\.py)', command)
     if not match:
         return None
     script_path = match.group(1)
+
+    # Resolve to absolute path: try exec_dir first, fallback to WORKSPACE_DIR
     if not script_path.startswith("/"):
-        script_path = os.path.join(exec_dir, script_path)
+        from server.agent.tools.e2b_sandbox import WORKSPACE_DIR as _WS
+        candidate_exec = os.path.normpath(os.path.join(exec_dir or _WS, script_path))
+        candidate_ws   = os.path.normpath(os.path.join(_WS, script_path))
+        # Prefer exec_dir path; we'll verify existence inside the loop
+        script_path = candidate_exec
+        _fallback_path = candidate_ws if candidate_ws != candidate_exec else None
+    else:
+        _fallback_path = None
+
+    if not E2B_ENABLED:
+        return ToolResult(
+            success=False,
+            message="[Shell] E2B sandbox diperlukan untuk validasi syntax. Tidak ada local execution.",
+            data={"error": "e2b_required", "command": command},
+        )
+
+    # ── Step 0: Quickly check if the file actually exists in E2B ─────────────
+    def _check_file_exists_in_e2b(path: str) -> bool:
+        try:
+            import shlex as _shlex
+            from server.agent.tools.e2b_sandbox import get_sandbox as _get_sb
+            sb = _get_sb()
+            if sb is None:
+                return False
+            r = sb.commands.run(f"test -f {_shlex.quote(path)} && echo EXISTS", timeout=8)
+            return r.exit_code == 0 and "EXISTS" in (r.stdout or "")
+        except Exception:
+            return False
+
+    resolved_path = script_path
+    if not _check_file_exists_in_e2b(resolved_path):
+        # Try fallback workspace path
+        if _fallback_path and _check_file_exists_in_e2b(_fallback_path):
+            resolved_path = _fallback_path
+        else:
+            # File truly does not exist — give a clear "write it first" error
+            msg = (
+                f"[Shell] File tidak ditemukan di sandbox: {resolved_path}\n\n"
+                f"SOLUSI: Tulis file terlebih dahulu menggunakan file_write, kemudian jalankan lagi.\n"
+                f"Contoh: file_write(file='{resolved_path}', content='...')"
+            )
+            return ToolResult(
+                success=False,
+                message=msg,
+                data={"stdout": "", "stderr": msg, "return_code": 1,
+                      "command": command, "error": "file_not_found",
+                      "script_path": resolved_path},
+            )
 
     max_attempts = 3
     last_stderr = ""
 
     for attempt in range(1, max_attempts + 1):
-        compile_cmd = f"python3 -m py_compile {script_path}"
-        if E2B_ENABLED:
-            res = _run_e2b(compile_cmd, exec_dir=exec_dir, timeout=30)
-        else:
-            return ToolResult(
-                success=False,
-                message="[Shell] E2B sandbox diperlukan untuk validasi syntax. Tidak ada local execution.",
-                data={"error": "e2b_required", "command": command},
-            )
+        compile_cmd = f"python3 -m py_compile {resolved_path}"
+        res = _run_e2b(compile_cmd, exec_dir=exec_dir, timeout=30)
 
         if res.get("success", False) or res.get("exit_code", -1) == 0:
             if attempt > 1:
                 import logging
                 logging.getLogger(__name__).info(
-                    "[Shell] Python syntax fixed on attempt %d for %s", attempt, script_path)
+                    "[Shell] Python syntax fixed on attempt %d for %s", attempt, resolved_path)
             return None
 
-        last_stderr = res.get("stderr", "")
+        last_stderr = res.get("stderr", "") or res.get("stdout", "")
+
+        # If py_compile itself says "No such file" → file disappeared mid-check
+        if "No such file or directory" in last_stderr or "errno 2" in last_stderr.lower():
+            msg = (
+                f"[Shell] File hilang dari sandbox saat validasi: {resolved_path}\n"
+                f"Kemungkinan sandbox di-reset. Tulis ulang file dengan file_write lalu coba lagi."
+            )
+            return ToolResult(
+                success=False,
+                message=msg,
+                data={"stdout": "", "stderr": last_stderr, "return_code": 1,
+                      "command": command, "error": "file_disappeared",
+                      "script_path": resolved_path},
+            )
 
         if attempt < max_attempts:
-            fixed = _auto_fix_python_syntax(script_path, last_stderr, exec_dir)
+            fixed = _auto_fix_python_syntax(resolved_path, last_stderr, exec_dir)
             if not fixed:
                 break
 
     msg = (
-        f"[Shell] Python syntax validation FAILED for {script_path} "
+        f"[Shell] Python syntax validation FAILED for {resolved_path} "
         f"(after {min(attempt, max_attempts)} attempt(s)).\n"
         f"Error: {last_stderr}\n\n"
         f"FIX REQUIRED: The script has syntax errors. You MUST:\n"
@@ -407,7 +464,7 @@ def _validate_python_syntax(command: str, exec_dir: str = "/home/ubuntu") -> Opt
         message=msg,
         data={"stdout": "", "stderr": last_stderr, "return_code": 1,
               "command": command, "error": "syntax_validation_failed",
-              "script_path": script_path, "attempts": attempt},
+              "script_path": resolved_path, "attempts": attempt},
     )
 
 
