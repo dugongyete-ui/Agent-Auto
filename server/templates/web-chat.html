@@ -316,9 +316,32 @@
     .tool-chip-status{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:16px;height:16px}
     .tool-chip-spin{width:12px;height:12px;border:1.5px solid var(--muted);
       border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
-    .tool-screenshot{display:none !important;margin:5px 0 2px 22px;border-radius:9px;overflow:hidden;border:1px solid var(--border);
-      max-width:400px;cursor:pointer;display:block;box-shadow:var(--shadow)}
-    .tool-screenshot img{width:100%;display:block;max-height:200px;object-fit:cover}
+    .tool-screenshot{margin:5px 0 2px 22px;border-radius:9px;overflow:hidden;border:1px solid var(--border);
+      max-width:400px;cursor:pointer;display:none;box-shadow:var(--shadow)}
+    .tool-screenshot.has-img{display:block}
+    .tool-screenshot img{width:100%;display:block;max-height:200px;object-fit:cover;transition:opacity .2s}
+    /* Todo/Task cards */
+    .todo-card{margin:4px 0 2px 22px;border:1px solid var(--border);border-radius:9px;overflow:hidden;background:var(--surface);font-size:12px}
+    .todo-card-header{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--surface2);border-bottom:1px solid var(--border)}
+    .todo-card-header svg{flex-shrink:0;color:var(--accent)}
+    .todo-card-title{font-weight:600;color:var(--text);font-size:12px}
+    .todo-card-body{padding:6px 10px;display:flex;flex-direction:column;gap:3px}
+    .todo-item{display:flex;align-items:flex-start;gap:6px;padding:3px 0}
+    .todo-item-check{flex-shrink:0;width:14px;height:14px;border-radius:3px;border:1.5px solid var(--muted);display:flex;align-items:center;justify-content:center;margin-top:1px}
+    .todo-item-check.done{border-color:var(--success);background:var(--success)}
+    .todo-item-check.done svg{display:block}
+    .todo-item-check svg{display:none;width:8px;height:8px;stroke:#fff;stroke-width:3}
+    .todo-item-text{flex:1;color:var(--text2);line-height:1.45}
+    .todo-item-text.done{text-decoration:line-through;color:var(--muted)}
+    /* File preview card */
+    .file-preview-card{margin:4px 0 2px 22px;border:1px solid var(--border);border-radius:9px;overflow:hidden;background:var(--surface);font-size:12px}
+    .file-preview-card .fpc-header{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--surface2);border-bottom:1px solid var(--border);cursor:pointer}
+    .file-preview-card .fpc-label{font-weight:600;color:var(--text);flex:1}
+    .file-preview-card .fpc-chev{font-size:11px;color:var(--muted);transition:transform .15s}
+    .file-preview-card.open .fpc-chev{transform:rotate(90deg)}
+    .file-preview-card .fpc-body{display:none;padding:0}
+    .file-preview-card.open .fpc-body{display:block}
+    .file-preview-card pre{margin:0;padding:8px 10px;font-size:11px;font-family:'JetBrains Mono',Menlo,monospace;color:#e6edf3;background:#0d1117;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
     .tool-download{margin:5px 0 2px 22px}
     .tool-download a{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;
       background:var(--surface2);border:1px solid var(--border);border-radius:8px;
@@ -1246,14 +1269,24 @@ const TOOL_LABELS = {
   browser_navigate:'Navigasi ke halaman',browser_view:'Lihat halaman',browser_click:'Klik elemen',
   browser_input:'Masukkan teks',browser_move_mouse:'Gerak mouse',browser_press_key:'Tekan tombol',
   browser_scroll_up:'Scroll atas',browser_scroll_down:'Scroll bawah',browser_console_exec:'Jalankan JS',
-  shell_exec:'Jalankan perintah',shell_view:'Lihat output',file_read:'Baca file',
-  file_write:'Tulis file',file_str_replace:'Edit file',info_search_web:'Cari web',
-  message_notify_user:'Notifikasi',message_ask_user:'Tanya pengguna',web_browse:'Jelajah web',
+  browser_select_option:'Pilih opsi',browser_screenshot:'Ambil screenshot',
+  shell_exec:'Jalankan perintah',shell_view:'Lihat output',
+  file_read:'Baca file',file_write:'Tulis file',file_str_replace:'Edit file',
+  file_find_by_name:'Cari file',file_find_in_content:'Cari isi file',file_list_dir:'List direktori',
+  info_search_web:'Cari web',web_search:'Cari web',web_browse:'Jelajah web',
+  message_notify_user:'Notifikasi',message_ask_user:'Tanya pengguna',
+  todo_write:'Buat todo list',todo_update:'Update todo',todo_read:'Baca todo',
+  task_create:'Buat sub-tugas',task_complete:'Selesaikan tugas',task_list:'Lihat tugas',
 };
 const TOOL_ARGS = {
   browser_navigate:'url',browser_view:'url',browser_click:'selector',browser_input:'text',
-  shell_exec:'command',file_read:'file',file_write:'file',info_search_web:'query',
-  message_notify_user:'message',web_browse:'url',
+  browser_press_key:'key',browser_select_option:'selector',
+  shell_exec:'command',file_read:'file',file_write:'file',file_str_replace:'file',
+  file_find_by_name:'pattern',file_find_in_content:'pattern',file_list_dir:'path',
+  info_search_web:'query',web_search:'query',web_browse:'url',
+  message_notify_user:'message',message_ask_user:'question',
+  todo_write:'title',todo_update:'item',todo_read:'',
+  task_create:'description',task_complete:'task_id',task_list:'',
 };
 const TOOL_ICONS = {
   browser:'<path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0"/><path d="M3.6 9h16.8M3.6 15h16.8M11.5 3a17 17 0 0 0 0 18M12.5 3a17 17 0 0 1 0 18"/>',
@@ -1261,6 +1294,8 @@ const TOOL_ICONS = {
   search:'<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
   file:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
   message:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  todo:'<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  task:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><path d="M3 17.5h5M5.5 15v5"/>',
   default:'<circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 0-14.14 0M4.93 19.07a10 10 0 0 0 14.14 0"/>',
 };
 
@@ -1271,6 +1306,8 @@ function getToolType(fn) {
   if (fn.includes('search')||fn.includes('info_search')) return 'search';
   if (fn.includes('file')) return 'file';
   if (fn.includes('message')||fn.includes('notify')) return 'message';
+  if (fn.startsWith('todo_')) return 'todo';
+  if (fn.startsWith('task_')) return 'task';
   return 'default';
 }
 function getToolLabel(fn) { return TOOL_LABELS[fn] || fn || 'Tool'; }
@@ -1382,6 +1419,19 @@ function updateToolChip(tcId, evt) {
       tpUrlText.textContent = tc.url;
       tpUrlbar.style.display = 'flex';
     }
+    if (tc.screenshot_b64 && (ok || err)) {
+      const src = `data:image/jpeg;base64,${tc.screenshot_b64}`;
+      updatePanelScreenshot(src, tc.url);
+      const parent = chip.parentElement;
+      if (parent && !document.getElementById(`ss-${tcId}`)) {
+        const ssEl = document.createElement('div');
+        ssEl.className = 'tool-screenshot has-img';
+        ssEl.id = `ss-${tcId}`;
+        ssEl.onclick = () => openScreenshot(src);
+        ssEl.innerHTML = `<img src="${src}" alt="Screenshot" loading="lazy">`;
+        parent.appendChild(ssEl);
+      }
+    }
   }
   if (tc?.type==='shell') {
     if (tc.console) tpStatus.textContent = tc.console.substring(0,80);
@@ -1455,6 +1505,19 @@ function updateToolChip(tcId, evt) {
       panelPre.appendChild(outSpan);
       panelPre.scrollTop = panelPre.scrollHeight;
     }
+    // Show file content preview for file_read
+    const fileContent = tc.content || tc.content_preview || '';
+    if (ok && fileContent && (tc.operation==='read'||tc.operation==='_read')) {
+      const parent = chip.parentElement;
+      if (parent && !document.getElementById(`fp-${tcId}`)) {
+        const fname = (tc.filename||tc.file||'').split('/').pop()||'file';
+        const fpc = document.createElement('div');
+        fpc.className = 'file-preview-card';
+        fpc.id = `fp-${tcId}`;
+        fpc.innerHTML = `<div class="fpc-header" onclick="this.parentElement.classList.toggle('open')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span class="fpc-label">${esc(fname)}</span><span class="fpc-chev">›</span></div><div class="fpc-body"><pre>${esc(fileContent.substring(0,2000))}</pre></div>`;
+        parent.appendChild(fpc);
+      }
+    }
   }
 
   // ─── File download button ──────────────────────────────────────────────────
@@ -1470,6 +1533,49 @@ function updateToolChip(tcId, evt) {
         dlEl.innerHTML = `<a href="${tc.download_url}" download="${fname}" target="_blank" rel="noopener noreferrer"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v9"/><polyline points="4 7 8 11 12 7"/><rect x="2" y="13" width="12" height="1" rx="0.5"/></svg><span>${fname}</span></a>`;
         parent.appendChild(dlEl);
       }
+    }
+  }
+
+  // ─── Todo card rendering ───────────────────────────────────────────────────
+  if (tc?.type==='todo' && ok) {
+    const parent = chip.parentElement;
+    if (parent && !document.getElementById(`td-${tcId}`)) {
+      const items = tc.items || [];
+      const title = tc.title || 'Todo List';
+      const doneCount = tc.done || 0;
+      const totalCount = tc.total || items.length;
+      const tdEl = document.createElement('div');
+      tdEl.className = 'todo-card';
+      tdEl.id = `td-${tcId}`;
+      const progressLabel = totalCount > 0 ? `${doneCount}/${totalCount}` : '';
+      const itemsHtml = items.length > 0
+        ? items.map(it => {
+            const done = it.done === true;
+            return `<div class="todo-item"><div class="todo-item-check ${done?'done':''}"><svg viewBox="0 0 8 8"><polyline points="1 4 3 6 7 2"/></svg></div><span class="todo-item-text ${done?'done':''}">${esc(it.text||'')}</span></div>`;
+          }).join('')
+        : `<div style="color:var(--muted);font-size:11px;padding:4px 0">${esc(tc.message||'Todo diperbarui')}</div>`;
+      tdEl.innerHTML = `<div class="todo-card-header"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span class="todo-card-title">${esc(title)}</span>${progressLabel?`<span style="font-size:11px;color:var(--muted);margin-left:auto">${progressLabel} selesai</span>`:''}</div><div class="todo-card-body">${itemsHtml}</div>`;
+      parent.appendChild(tdEl);
+    }
+  }
+
+  // ─── Task card rendering ───────────────────────────────────────────────────
+  if (tc?.type==='task' && ok) {
+    const parent = chip.parentElement;
+    if (parent && !document.getElementById(`tk-${tcId}`)) {
+      const tasks = tc.tasks || [];
+      const tkEl = document.createElement('div');
+      tkEl.className = 'todo-card';
+      tkEl.id = `tk-${tcId}`;
+      const tasksHtml = tasks.length > 0
+        ? tasks.map(t => {
+            const done = t.status==='completed';
+            const failed = t.status==='failed';
+            return `<div class="todo-item"><div class="todo-item-check ${done?'done':''}"><svg viewBox="0 0 8 8"><polyline points="1 4 3 6 7 2"/></svg></div><span class="todo-item-text ${done?'done':''}">${esc(t.description||t.title||'')}</span>${failed?'<span style="font-size:10px;color:var(--error);margin-left:4px">gagal</span>':''}</div>`;
+          }).join('')
+        : `<div style="color:var(--muted);font-size:11px;padding:4px 0">${esc(tc.message||'Tugas diperbarui')}</div>`;
+      tkEl.innerHTML = `<div class="todo-card-header"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><path d="M3 17.5h5M5.5 15v5"/></svg><span class="todo-card-title">Sub-Tugas</span>${tasks.length?`<span style="font-size:11px;color:var(--muted);margin-left:auto">${tasks.length} tugas</span>`:''}</div><div class="todo-card-body">${tasksHtml}</div>`;
+      parent.appendChild(tkEl);
     }
   }
 
@@ -1532,6 +1638,13 @@ function updatePanelTool(type, label, arg, icon) {
 }
 
 function updatePanelScreenshot(src, url) {
+  if (!src) return;
+  showToolPanel(true);
+  vncCont.style.display = 'none';
+  tpSS.src = src;
+  tpSS.style.display = 'block';
+  tpEmpty.style.display = 'none';
+  if (url) { tpUrlText.textContent = url; tpUrlbar.style.display = 'flex'; }
 }
 
 // ═══════════════════════════════════════════════════
@@ -2150,6 +2263,8 @@ function handleEvent(evt) {
     case 'session':
       S.sessionId = evt.session_id;
       S.vncPort = evt.vnc_ws_port || 6081;
+      // Persist active agent session ID for reconnection on refresh
+      try { localStorage.setItem('dzeck_active_agent_sid', evt.session_id); } catch {}
       break;
 
     case 'title':
@@ -2458,6 +2573,53 @@ function finalize() {
   setStreaming(false);
   scrollBottom(true);
   tpStatus.textContent='Selesai';
+  // Clear active agent session (task is done)
+  try { localStorage.removeItem('dzeck_active_agent_sid'); } catch {}
+}
+
+// ═══════════════════════════════════════════════════
+// RECONNECT TO EXISTING AGENT SESSION
+// ═══════════════════════════════════════════════════
+async function doReconnect(agentSid) {
+  if (S.isStreaming) return;
+  try {
+    const status = await fetch(`/api/agent/status/${agentSid}`).then(r=>r.json()).catch(()=>null);
+    if (!status || !status.exists || status.done) {
+      localStorage.removeItem('dzeck_active_agent_sid');
+      return;
+    }
+    // Agent is still running — reconnect
+    S.sessionId = agentSid;
+    setStreaming(true);
+    try { showThinking(); } catch(e) {}
+    tpStatus.textContent='Menyambungkan kembali...';
+    showToast('AI masih berjalan — menyambungkan kembali...', 'info');
+
+    const resp = await fetch(`/api/agent/stream/${agentSid}`, { signal: (S.abortCtrl = new AbortController()).signal });
+    if (!resp.ok) { localStorage.removeItem('dzeck_active_agent_sid'); setStreaming(false); return; }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf='';
+    while(true) {
+      const {value,done} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value,{stream:true});
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const d = line.slice(6).trim();
+        if (d==='[DONE]') { finalize(); return; }
+        try { handleEvent(JSON.parse(d)); } catch(e) {}
+      }
+    }
+    finalize();
+  } catch(err) {
+    if (err.name==='AbortError') return;
+    localStorage.removeItem('dzeck_active_agent_sid');
+    setStreaming(false);
+  }
 }
 
 // ═══════════════════════════════════════════════════
@@ -2592,6 +2754,12 @@ function sendMessage() {
   doSend(text||'[File dilampirkan]', attachments);
 }
 function stopGeneration() {
+  // Kill the backend agent process via API
+  const sidToStop = S.sessionId || (() => { try { return localStorage.getItem('dzeck_active_agent_sid'); } catch { return null; } })();
+  if (sidToStop) {
+    fetch(`/api/agent/stop/${sidToStop}`, { method: 'POST' }).catch(()=>{});
+    try { localStorage.removeItem('dzeck_active_agent_sid'); } catch {}
+  }
   if (S.abortCtrl) { S.abortCtrl.abort(); S.abortCtrl=null; }
   finalize();
 }
@@ -2636,6 +2804,12 @@ renderHistory();
       : sessions[0];
     if (target && target.messages && target.messages.length > 0) {
       loadSession(target.id);
+      // After restoring session, check if there's an active agent to reconnect to
+      const activeAgentSid = (() => { try { return localStorage.getItem('dzeck_active_agent_sid'); } catch { return null; } })();
+      if (activeAgentSid) {
+        // Small delay so UI is ready
+        setTimeout(() => doReconnect(activeAgentSid), 800);
+      }
       return;
     }
   } catch(e) {}

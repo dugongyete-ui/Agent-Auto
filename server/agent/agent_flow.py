@@ -562,9 +562,42 @@ def build_tool_content(tool_name: str, tool_result: ToolResult) -> Optional[Dict
             "content": str(data.get("content_preview", "") or data.get("content", ""))[:2000],
             "operation": tool_name.replace("file_", ""),
             "language": _infer_language(data.get("file", data.get("filename", ""))),
+            "download_url": data.get("download_url", ""),
         }
     elif tool_name in ("mcp_call_tool", "mcp_list_tools"):
         return {"type": "mcp", "tool": data.get("tool_name", ""), "result": str(data)[:2000]}
+    elif tool_name in ("todo_write", "todo_update", "todo_read"):
+        content = data.get("content", "")
+        items = []
+        if content:
+            for line in content.splitlines():
+                ls = line.strip()
+                if ls.startswith("- [x]"):
+                    items.append({"text": ls[5:].strip(), "done": True})
+                elif ls.startswith("- [ ]"):
+                    items.append({"text": ls[5:].strip(), "done": False})
+        return {
+            "type": "todo",
+            "todo_type": tool_name,
+            "title": data.get("title", "Todo List"),
+            "items": items,
+            "total": data.get("total", len(items)),
+            "done": data.get("done", sum(1 for i in items if i["done"])),
+            "item": data.get("item", ""),
+            "message": tool_result.message or "",
+        }
+    elif tool_name in ("task_create", "task_complete", "task_list"):
+        tasks = data.get("tasks", [])
+        if not tasks and data.get("task"):
+            tasks = [data["task"]]
+        return {
+            "type": "task",
+            "task_type": tool_name,
+            "tasks": tasks,
+            "total": data.get("total", len(tasks)),
+            "task_id": data.get("task_id", ""),
+            "message": tool_result.message or "",
+        }
 
     return None
 

@@ -133,6 +133,34 @@ export async function registerRoutes(app: any): Promise<Server> {
     attemptRequest();
   });
 
+  // ─── Active Agent Sessions (persistence across SSE reconnects) ───────────
+  interface AgentSession {
+    proc: any;
+    eventQueue: string[];   // serialized SSE lines
+    clients: Set<any>;      // active response objects
+    done: boolean;
+    startedAt: number;
+    stderrBuffer: string;
+  }
+  const activeAgentSessions = new Map<string, AgentSession>();
+
+  // Clean up sessions older than 30 minutes
+  setInterval(() => {
+    const now = Date.now();
+    for (const [sid, session] of activeAgentSessions.entries()) {
+      if (session.done && now - session.startedAt > 30 * 60 * 1000) {
+        activeAgentSessions.delete(sid);
+      }
+    }
+  }, 5 * 60 * 1000);
+
+  function _broadcastToSession(session: AgentSession, line: string) {
+    session.eventQueue.push(line);
+    for (const client of session.clients) {
+      try { client.write(line); } catch {}
+    }
+  }
+
   // ─── Agent endpoint with SSE ───────────────────────────────────────────────
   app.post("/api/agent", async (req: any, res: any) => {
     const { message, messages, attachments, session_id, resume_from_session, is_continuation } = req.body;
@@ -178,11 +206,22 @@ export async function registerRoutes(app: any): Promise<Server> {
     }));
     proc.stdin.end();
 
-    let buf = "";
-    let doneSent = false;
-    let stderrBuffer = "";
+    // Create session entry
+    const session: AgentSession = {
+      proc,
+      eventQueue: [],
+      clients: new Set([res]),
+      done: false,
+      startedAt: Date.now(),
+      stderrBuffer: "",
+    };
+    activeAgentSessions.set(sid, session);
 
-    res.write(`data: ${JSON.stringify({ type: "session", session_id: sid, e2b_enabled: E2B_ENABLED })}\n\n`);
+    // Send session event
+    const sessionLine = `data: ${JSON.stringify({ type: "session", session_id: sid, e2b_enabled: E2B_ENABLED })}\n\n`;
+    _broadcastToSession(session, sessionLine);
+
+    let buf = "";
 
     proc.stdout.on("data", (data: Buffer) => {
       buf += data.toString();
@@ -192,8 +231,13 @@ export async function registerRoutes(app: any): Promise<Server> {
         if (!line.trim()) continue;
         try {
           const parsed = JSON.parse(line);
-          if (parsed.type === "done") { doneSent = true; res.write("data: [DONE]\n\n"); }
-          else res.write(`data: ${JSON.stringify(parsed)}\n\n`);
+          if (parsed.type === "done") {
+            session.done = true;
+            _broadcastToSession(session, "data: [DONE]\n\n");
+            for (const client of session.clients) { try { client.end(); } catch {} }
+          } else {
+            _broadcastToSession(session, `data: ${JSON.stringify(parsed)}\n\n`);
+          }
         } catch (parseErr) {
           console.error("[SSE parse error] Failed to parse line:", line.substring(0, 200), parseErr);
         }
@@ -201,40 +245,97 @@ export async function registerRoutes(app: any): Promise<Server> {
     });
 
     proc.stderr.on("data", (data: Buffer) => {
-      stderrBuffer += data.toString();
+      session.stderrBuffer += data.toString();
       console.error("[Agent stderr]:", data.toString());
     });
 
     proc.on("error", (err: Error) => {
       console.error("[Agent] Failed to spawn Python agent:", err.message);
-      if (!res.writableEnded) {
-        if (!doneSent) {
-          res.write(`data: ${JSON.stringify({ type: "error", error: "Python agent tidak tersedia. Pastikan Python terinstall." })}\n\n`);
-        }
-        res.write("data: [DONE]\n\n");
-        res.end();
-      }
+      session.done = true;
+      const errLine = `data: ${JSON.stringify({ type: "error", error: "Python agent tidak tersedia. Pastikan Python terinstall." })}\n\n`;
+      _broadcastToSession(session, errLine);
+      _broadcastToSession(session, "data: [DONE]\n\n");
+      for (const client of session.clients) { try { client.end(); } catch {} }
     });
+
+    const BENIGN = [/redis/i, /mongodb/i, /motor/i, /DNS/i, /Name or service not known/i,
+      /ConnectionRefusedError/i, /\[CacheStore\]/i, /\[SessionStore\]/i, /\[SessionService\]/i,
+      /WARNING:/i, /DeprecationWarning/i, /connection failed/i, /Traceback/i,
+      /aioredis/i, /pymongo/i, /socket\.gaierror/i, /\[agent\]/i];
 
     proc.on("close", (code: number | null) => {
-      // Only send a user-facing error if process failed AND stderr has real (non-benign) content
-      if (code !== 0 && stderrBuffer && !doneSent && !res.writableEnded) {
-        const BENIGN = [/redis/i, /mongodb/i, /motor/i, /DNS/i, /Name or service not known/i,
-          /ConnectionRefusedError/i, /\[CacheStore\]/i, /\[SessionStore\]/i, /\[SessionService\]/i,
-          /WARNING:/i, /DeprecationWarning/i, /connection failed/i, /Traceback/i,
-          /aioredis/i, /pymongo/i, /socket\.gaierror/i, /\[agent\]/i];
-        const hasRealError = !BENIGN.some(p => p.test(stderrBuffer));
-        if (hasRealError) {
-          // Send a clean, user-friendly error — not raw Python traceback
-          res.write(`data: ${JSON.stringify({ type: "error", error: "Agen mengalami kesalahan internal. Silakan coba lagi." })}\n\n`);
+      if (!session.done) {
+        if (code !== 0 && session.stderrBuffer) {
+          const hasRealError = !BENIGN.some(p => p.test(session.stderrBuffer));
+          if (hasRealError) {
+            _broadcastToSession(session, `data: ${JSON.stringify({ type: "error", error: "Agen mengalami kesalahan internal. Silakan coba lagi." })}\n\n`);
+          }
         }
+        session.done = true;
+        _broadcastToSession(session, "data: [DONE]\n\n");
+        for (const client of session.clients) { try { client.end(); } catch {} }
       }
-      if (!doneSent && !res.writableEnded) res.write("data: [DONE]\n\n");
-      res.end();
-      if (code !== 0) console.error(`Agent process exited with code ${code}. Stderr: ${stderrBuffer.slice(-500)}`);
+      if (code !== 0) console.error(`Agent process exited with code ${code}. Stderr: ${session.stderrBuffer.slice(-500)}`);
     });
 
-    res.on("close", () => { proc.kill(); });
+    // Client disconnects — keep proc alive, just remove client from session
+    res.on("close", () => { session.clients.delete(res); });
+  });
+
+  // ─── Reconnect to existing agent session ──────────────────────────────────
+  // ?replay=true  → replay all past events (default false to avoid duplicate chat messages)
+  app.get("/api/agent/stream/:sid", (req: any, res: any) => {
+    const { sid } = req.params;
+    const replay = req.query.replay === "true";
+    const session = activeAgentSessions.get(sid);
+    if (!session) {
+      return res.status(404).json({ error: "Session not found or expired" });
+    }
+    setupSSEHeaders(res);
+
+    session.clients.add(res);
+    if (replay) {
+      // Replay all queued events
+      for (const line of session.eventQueue) {
+        try { res.write(line); } catch {}
+      }
+    }
+    if (session.done) {
+      try { res.write("data: [DONE]\n\n"); res.end(); } catch {}
+    }
+    res.on("close", () => { session.clients.delete(res); });
+  });
+
+  // ─── Agent session status endpoint ────────────────────────────────────────
+  app.get("/api/agent/status/:sid", (req: any, res: any) => {
+    const { sid } = req.params;
+    const session = activeAgentSessions.get(sid);
+    if (!session) {
+      return res.json({ exists: false });
+    }
+    res.json({
+      exists: true,
+      done: session.done,
+      eventCount: session.eventQueue.length,
+      clients: session.clients.size,
+    });
+  });
+
+  // ─── Stop an active agent session ─────────────────────────────────────────
+  app.post("/api/agent/stop/:sid", (req: any, res: any) => {
+    const { sid } = req.params;
+    const session = activeAgentSessions.get(sid);
+    if (!session) {
+      return res.json({ stopped: false, reason: "not_found" });
+    }
+    if (!session.done) {
+      try { session.proc.kill("SIGTERM"); } catch {}
+      session.done = true;
+      _broadcastToSession(session, `data: ${JSON.stringify({ type: "error", error: "Agen dihentikan oleh pengguna." })}\n\n`);
+      _broadcastToSession(session, "data: [DONE]\n\n");
+      for (const client of session.clients) { try { client.end(); } catch {} }
+    }
+    res.json({ stopped: true });
   });
 
   app.get("/api/test", (_req: any, res: any) => {
