@@ -1194,6 +1194,7 @@ class DzeckAgent:
                 from server.agent.tools.shell import (
                     _validate_python_syntax, _check_repeated_command_prerun,
                     _check_repeated_error, _check_error_in_output,
+                    _preflight_requirements_file,
                 )
                 sb = get_sandbox()
                 cmd = _args.get("command", "")
@@ -1203,6 +1204,17 @@ class DzeckAgent:
                     return execute_tool(_res, _args)
 
                 from server.agent.models.tool_result import ToolResult
+
+                req_err = _preflight_requirements_file(cmd, workdir)
+                if req_err:
+                    e2b_q.put(None)
+                    return ToolResult(
+                        success=False,
+                        message=req_err,
+                        data={"stdout": "", "stderr": req_err, "return_code": 1,
+                              "command": cmd, "backend": "E2B",
+                              "error": "requirements_file_not_found"},
+                    )
 
                 blocked = _check_repeated_command_prerun(cmd)
                 if blocked:

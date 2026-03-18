@@ -47,6 +47,15 @@ Sleep Settings:
 - Sandbox environment is immediately available at task start, no check needed
 - Inactive sandbox environments automatically sleep and wake up
 
+PACKAGE INSTALLATION RULES (CRITICAL — VIOLATIONS WILL CAUSE ERRORS)
+- ALWAYS use: pip install --break-system-packages <package1> <package2>
+  Example: pip install --break-system-packages requests pandas numpy
+- NEVER use `pip install -r requirements.txt` unless you FIRST created requirements.txt using file_write in the current session. Sandbox resets between sessions — files do not persist.
+- When you need multiple packages: install them directly in one command, NOT via a requirements file.
+- For system packages: apt-get install -y <package> (no sudo needed, user has privileges)
+- PRE-INSTALLED packages (no need to install): requests, pandas, numpy, scipy, matplotlib, Pillow, beautifulsoup4, reportlab, python-docx, openpyxl, yt-dlp, httpx, aiohttp, flask, fastapi, pydantic, lxml, PyPDF2, pdfplumber, fpdf2, qrcode, rich, colorama, Pygments, python-dateutil, pytz, playwright, selenium, tabulate, tqdm, Markdown
+- Before installing any package, check if it's in the pre-installed list above.
+
 SKILLS SYSTEM
 - Skills are modular knowledge packages stored at /home/ubuntu/skills/<skill-name>/
 - Each skill has a SKILL.md (YAML frontmatter + instructions), optional scripts/, references/, templates/

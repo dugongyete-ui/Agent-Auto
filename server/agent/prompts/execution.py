@@ -76,8 +76,15 @@ ATURAN PEMILIHAN TOOL (WAJIB DIPATUHI — jangan langgar ini):
    - BENAR: shell_exec(command="python3 script.py", exec_dir="/home/ubuntu")
    - SELALU gunakan exec_dir="/home/ubuntu" sebagai workspace
    - Hanya untuk operasi CLI/terminal — BUKAN untuk akses web
-   - Install Python package: WAJIB `python3 -m pip install <pkg> --break-system-packages`
-     JANGAN gunakan `pip install` saja — bisa masuk ke Python yang salah!
+   - Install Python package: WAJIB `pip install --break-system-packages <pkg1> <pkg2>`
+     JANGAN gunakan `pip install` saja (tanpa --break-system-packages) — akan error!
+   - DILARANG KERAS: `pip install -r requirements.txt` tanpa membuat file dulu.
+     File requirements.txt HARUS dibuat dengan file_write TERLEBIH DAHULU sebelum dipakai.
+     Alternatif lebih aman: langsung `pip install --break-system-packages pkg1 pkg2 pkg3`
+   - Paket PRE-INSTALLED (tidak perlu install): requests, pandas, numpy, scipy, matplotlib,
+     Pillow, beautifulsoup4, reportlab, python-docx, openpyxl, yt-dlp, httpx, aiohttp,
+     flask, fastapi, pydantic, lxml, PyPDF2, pdfplumber, fpdf2, qrcode, rich, colorama,
+     Pygments, python-dateutil, pytz, playwright, selenium, tabulate, tqdm, Markdown
 
 5. OPERASI FILE → file_read, file_write, file_str_replace
    - Script/kode kerja → simpan di /home/ubuntu/ (TIDAK akan muncul download)
