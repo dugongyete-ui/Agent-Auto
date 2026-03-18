@@ -197,9 +197,20 @@ def _create_sandbox() -> Optional[Any]:
             _push_sandbox_configs(sb)
 
             sb.commands.run(
-                "pip install --quiet reportlab python-docx openpyxl Pillow requests beautifulsoup4 "
-                "pandas matplotlib yt-dlp 2>/dev/null || true",
-                timeout=120
+                "pip install --quiet --break-system-packages "
+                "reportlab python-docx openpyxl Pillow requests beautifulsoup4 "
+                "pandas matplotlib yt-dlp numpy scipy httpx aiohttp "
+                "flask fastapi uvicorn pydantic lxml tabulate tqdm "
+                "PyPDF2 pdfplumber fpdf2 Markdown mistune "
+                "qrcode pyqrcode Pygments colorama rich "
+                "python-dateutil pytz tzdata "
+                "playwright selenium 2>/dev/null || true",
+                timeout=180
+            )
+            sb.commands.run(
+                "apt-get install -y -q ffmpeg imagemagick curl wget unzip zip jq "
+                "2>/dev/null || true",
+                timeout=60
             )
 
             sb.commands.run(

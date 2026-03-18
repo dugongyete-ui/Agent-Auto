@@ -266,6 +266,41 @@ def _extract_output_paths_from_command(command: str) -> list:
     return unique
 
 
+def _preflight_requirements_file(command: str, exec_dir: str = "/home/ubuntu") -> Optional[str]:
+    """Before executing `pip install -r <file>`, verify the requirements file exists in the sandbox.
+    Returns an error message string if the file does not exist, or None if OK."""
+    if not E2B_ENABLED:
+        return None
+    import re as _re
+    import shlex as _shlex
+    match = _re.search(r'pip[3]?\s+install\s+(?:\S+\s+)*-r\s+(\S+)', command)
+    if not match:
+        return None
+    req_file = match.group(1).strip("'\"")
+    if not req_file.startswith("/"):
+        req_file = os.path.normpath(os.path.join(exec_dir or "/home/ubuntu", req_file))
+    try:
+        from server.agent.tools.e2b_sandbox import get_sandbox as _get_sb
+        sb = _get_sb()
+        if sb is None:
+            return None
+        r = sb.commands.run(f"test -f {_shlex.quote(req_file)} && echo EXISTS", timeout=8)
+        if r.exit_code == 0 and "EXISTS" in (r.stdout or ""):
+            return None
+        msg = (
+            f"[Shell] Requirements file tidak ditemukan di sandbox: {req_file}\n\n"
+            f"SOLUSI WAJIB — pilih salah satu:\n"
+            f"  1. Buat file requirements.txt terlebih dahulu dengan file_write, lalu jalankan lagi:\n"
+            f"     file_write(file='{req_file}', content='requests\\npandas\\n...')\n"
+            f"  2. ATAU langsung install tanpa file (lebih aman):\n"
+            f"     pip install --break-system-packages <paket1> <paket2> ...\n\n"
+            f"JANGAN retry dengan perintah yang sama — file harus dibuat dulu."
+        )
+        return msg
+    except Exception:
+        return None
+
+
 def _preflight_ensure_scripts(command: str, exec_dir: str = "/home/ubuntu") -> Optional[str]:
     """Before executing a python script command in E2B, ensure the script file exists in the sandbox.
     Returns an error message string if the file cannot be ensured, or None on success."""
@@ -617,6 +652,15 @@ def shell_exec(command: str, exec_dir: str = "/home/ubuntu", id: str = "default"
             message=msg,
             data={"stdout": "", "stderr": msg, "return_code": 1, "command": command,
                   "id": id, "error": "e2b_not_available"},
+        )
+
+    req_err = _preflight_requirements_file(command, exec_dir=exec_dir)
+    if req_err:
+        return ToolResult(
+            success=False,
+            message=req_err,
+            data={"stdout": "", "stderr": req_err, "return_code": 1,
+                  "command": command, "id": id, "error": "requirements_file_not_found"},
         )
 
     preflight_err = _preflight_ensure_scripts(command, exec_dir=exec_dir)
