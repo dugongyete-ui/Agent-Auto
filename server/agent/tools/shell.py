@@ -54,7 +54,7 @@ def _shell_quote(s: str) -> str:
     return shlex.quote(s)
 
 
-def _run_e2b(command: str, exec_dir: str = "/home/user/dzeck-ai", timeout: int = 90) -> Dict[str, Any]:
+def _run_e2b(command: str, exec_dir: str = "/home/ubuntu", timeout: int = 90) -> Dict[str, Any]:
     """Execute command via E2B cloud sandbox. Auto-ensures workspace dir exists.
     Streams stdout/stderr to stream_queue if one is registered on the current thread.
     Uses run_command wrapper for consistent retry/guardrail behavior."""
@@ -243,10 +243,10 @@ def _sync_e2b_output_file(file_path: str) -> str:
 
 
 def _extract_output_paths_from_command(command: str) -> list:
-    """Scan a shell command for output file paths in /home/user/dzeck-ai/output/."""
+    """Scan a shell command for output file paths in /home/ubuntu/output/."""
     import re
-    OUTPUT_DIR = "/home/user/dzeck-ai/output/"
-    pattern = r"(/home/user/dzeck-ai/output/[\w.\-/]+)"
+    OUTPUT_DIR = "/home/ubuntu/output/"
+    pattern = r"(/home/ubuntu/output/[\w.\-/]+)"
     paths = re.findall(pattern, command)
     unique = []
     seen = set()
@@ -258,7 +258,7 @@ def _extract_output_paths_from_command(command: str) -> list:
     return unique
 
 
-def _preflight_ensure_scripts(command: str, exec_dir: str = "/home/user/dzeck-ai") -> Optional[str]:
+def _preflight_ensure_scripts(command: str, exec_dir: str = "/home/ubuntu") -> Optional[str]:
     """Before executing a python script command in E2B, ensure the script file exists in the sandbox.
     Returns an error message string if the file cannot be ensured, or None on success."""
     if not E2B_ENABLED:
@@ -345,7 +345,7 @@ def _auto_fix_python_syntax(script_path: str, error_msg: str, exec_dir: str) -> 
         return False
 
 
-def _validate_python_syntax(command: str, exec_dir: str = "/home/user/dzeck-ai") -> Optional[ToolResult]:
+def _validate_python_syntax(command: str, exec_dir: str = "/home/ubuntu") -> Optional[ToolResult]:
     """Pre-validate Python script syntax with up to 3 auto-fix attempts.
     Returns ToolResult on failure after all attempts, None on success."""
     import re as _re
@@ -470,9 +470,31 @@ def _check_error_in_output(stdout: str, stderr: str) -> bool:
     return any(indicator in combined for indicator in error_indicators)
 
 
-def shell_exec(command: str, exec_dir: str = "/home/user/dzeck-ai", id: str = "default") -> ToolResult:
+_PROTECTED_SYSTEM_DIRS = [
+    "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc",
+    "/root", "/run", "/sbin", "/srv", "/sys", "/tmp", "/usr", "/var",
+]
+
+def _check_system_dir_deletion(command: str) -> Optional[str]:
+    """Block rm -rf commands targeting system directories outside /home/ubuntu."""
+    import re
+    pattern = r'\brm\s+(?:-[\w]+\s+)*(-rf?|-fr?)\s+([\S]+)'
+    for match in re.finditer(pattern, command):
+        target = match.group(2).rstrip("/")
+        if not target.startswith("/home/ubuntu") and not target.startswith("/tmp/dzeck"):
+            for sys_dir in _PROTECTED_SYSTEM_DIRS:
+                if target == sys_dir or target.startswith(sys_dir + "/"):
+                    return (
+                        f"[Shell] BLOCKED: Attempted to delete protected system directory '{target}'. "
+                        f"Only paths under /home/ubuntu are allowed for deletion. "
+                        f"Refusing to execute this command."
+                    )
+    return None
+
+
+def shell_exec(command: str, exec_dir: str = "/home/ubuntu", id: str = "default") -> ToolResult:
     """Execute a shell command. Uses E2B cloud sandbox when available, refuses local execution."""
-    exec_dir = exec_dir or "/home/user/dzeck-ai"
+    exec_dir = exec_dir or "/home/ubuntu"
 
     gui_detected = _is_gui_command(command)
     if gui_detected:
@@ -489,6 +511,15 @@ def shell_exec(command: str, exec_dir: str = "/home/user/dzeck-ai", id: str = "d
             message=msg,
             data={"stdout": "", "stderr": msg, "return_code": 1, "command": command,
                   "id": id, "error": "gui_not_available"},
+        )
+
+    sys_del_err = _check_system_dir_deletion(command)
+    if sys_del_err:
+        return ToolResult(
+            success=False,
+            message=sys_del_err,
+            data={"stdout": "", "stderr": sys_del_err, "return_code": 1,
+                  "command": command, "id": id, "error": "system_dir_deletion_blocked"},
         )
 
     blocked = _check_repeated_command_prerun(command)

@@ -1,0 +1,24 @@
+Halo AI Agent, saya ingin Anda merombak proyek "Agent-Auto" saya agar memiliki standar operasional, transparansi, dan struktur sandbox yang setara dengan Manus AI. Berikut adalah instruksi perbaikan mendalam:
+
+1. **Upgrade Sandbox Manager (`server/agent/tools/e2b_sandbox.py`)**:
+   - Ubah `WORKSPACE_DIR` dari `/home/user/dzeck-ai` menjadi `/home/ubuntu`.
+   - Di dalam fungsi `_create_sandbox`, tambahkan perintah untuk membuat struktur folder standar: `skills/`, `Downloads/`, dan `upload/`.
+   - Pastikan setiap startup sandbox membuat file `sandbox.txt` di root `/home/ubuntu` sebagai penanda status lingkungan.
+   - Pastikan semua tool (shell, file, browser) secara default bekerja di dalam `/home/ubuntu`.
+
+2. **Update Konstitusi Sistem (`server/agent/prompts/system.py`)**:
+   - Tambahkan bagian `<reporting_rules>` yang mewajibkan agen untuk selalu:
+     a. Menjelaskan pemikiran (Chain of Thought) secara detail sebelum melakukan aksi.
+     b. Melaporkan nama tool dan argumen lengkap yang akan digunakan.
+     c. Melaporkan hasil observasi (stdout, cuplikan file, atau konten halaman) secara transparan setelah eksekusi.
+   - Tambahkan aturan "Read after Write": Agen WAJIB melakukan `file_read` setelah melakukan `file_write` untuk verifikasi konten dan melaporkan ringkasannya ke user.
+
+3. **Update Orchestrator & Agents (`server/agent/prompts/agents/`)**:
+   - Sinkronkan instruksi di `orchestrator.py`, `code_agent.py`, `web_agent.py`, `data_agent.py`, dan `files_agent.py` agar semuanya patuh pada aturan transparansi baru di `system.py`.
+   - Pastikan `code_agent.py` selalu menyimpan kode ke file sebelum dijalankan, jangan pernah menjalankan kode mentah langsung di terminal.
+
+4. **Update Shell Tool (`server/agent/tools/shell.py`)**:
+   - Pastikan `exec_dir` default selalu mengarah ke `/home/ubuntu`.
+   - Tambahkan mekanisme proteksi agar agen tidak mencoba menghapus direktori sistem di luar `/home/ubuntu`.
+
+Tolong lakukan perubahan ini pada file-file terkait di dalam repositori Agent-Auto. Fokus utama adalah pada standarisasi direktori sandbox dan peningkatan transparansi operasional agar user bisa melihat setiap langkah kerja agen secara asli.

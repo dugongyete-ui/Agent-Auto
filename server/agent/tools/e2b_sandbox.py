@@ -22,11 +22,11 @@ _sandbox: Optional[Any] = None
 _sandbox_create_attempts = 0
 _MAX_CREATE_ATTEMPTS = 3
 
-WORKSPACE_DIR = "/home/user/dzeck-ai"
-OUTPUT_DIR = "/home/user/dzeck-ai/output"
+WORKSPACE_DIR = "/home/ubuntu"
+OUTPUT_DIR = "/home/ubuntu/output"
 
 def get_session_workspace() -> str:
-    """Return per-session workspace dir: /home/user/dzeck-ai/<session_id>/
+    """Return per-session workspace dir: /home/ubuntu/<session_id>/
     Falls back to WORKSPACE_DIR if no session is set."""
     session_id = os.environ.get("DZECK_SESSION_ID", "")
     if session_id:
@@ -123,7 +123,9 @@ def _create_sandbox() -> Optional[Any]:
 
             session_ws = get_session_workspace()
             sb.commands.run(
-                f"mkdir -p {WORKSPACE_DIR} {OUTPUT_DIR} {session_ws} /tmp/dzeck_output && "
+                f"mkdir -p {WORKSPACE_DIR} {OUTPUT_DIR} {session_ws} /tmp/dzeck_output "
+                f"{WORKSPACE_DIR}/skills {WORKSPACE_DIR}/Downloads {WORKSPACE_DIR}/upload && "
+                f"echo 'sandbox_ready=true\\nworkspace={WORKSPACE_DIR}\\noutput={OUTPUT_DIR}' > {WORKSPACE_DIR}/sandbox.txt && "
                 f"cd {session_ws} && echo 'workspace ready'",
                 timeout=15
             )
@@ -197,7 +199,7 @@ def run_command(command: str, workdir: str = WORKSPACE_DIR, timeout: int = 120,
                 "exit_code": -1,
             }
         try:
-            if workdir and workdir.startswith("/home/user/dzeck-ai"):
+            if workdir and workdir.startswith("/home/ubuntu"):
                 import shlex
                 try:
                     sb.commands.run(f"mkdir -p {shlex.quote(workdir)}", timeout=10)
