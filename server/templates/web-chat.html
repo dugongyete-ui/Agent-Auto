@@ -311,6 +311,7 @@
     @keyframes spin{to{transform:rotate(360deg)}}
     .step-ico.completed{background:var(--text2);border-color:var(--text2)}
     .step-ico.failed{background:var(--error);border-color:var(--error)}
+    .step-ico.pending{border-color:var(--accent);border-style:dashed;animation:spin 1.6s linear infinite}
     .step-ico svg{width:8px;height:8px;display:block}
     .step-desc{flex:1;font-size:13px;color:var(--text2);font-weight:500;line-height:1.4}
     .step-desc.done{color:var(--muted)}
@@ -402,6 +403,7 @@
     .plan-step-mini-dot.done{background:var(--text2);border-color:var(--text2)}
     .plan-step-mini-dot.running{border-color:var(--warning);border-top-color:transparent;animation:spin .8s linear infinite}
     .plan-step-mini-dot.failed{background:var(--error);border-color:var(--error)}
+    .plan-step-mini-dot.pending{border-color:var(--accent);border-style:dashed;animation:spin 1.6s linear infinite}
     .plan-step-mini-text{font-size:12px;color:var(--muted2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .plan-step-mini-text.done{color:var(--muted)}
 
@@ -1005,6 +1007,8 @@ const S = {
   _isAskMsg: false,
   // Waiting for user reply (mid-plan pause)
   waitingForUser: false,
+  // Stream generation counter — prevents stale streams from calling finalize()
+  streamGen: 0,
 };
 
 function newSession(firstMessage) {
@@ -1711,7 +1715,7 @@ function updatePlanBarCount() {
 function updatePlanMini(id, status) {
   const dot = document.getElementById(`pmd-${id}`);
   const txt = document.getElementById(`pmt-${id}`);
-  if (dot) dot.className = `plan-step-mini-dot ${status==='completed'?'done':status==='running'?'running':status==='failed'?'failed':''}`;
+  if (dot) dot.className = `plan-step-mini-dot ${status==='completed'?'done':status==='running'?'running':status==='failed'?'failed':status==='pending'?'pending':''}`;
   if (txt) txt.className = `plan-step-mini-text ${status==='completed'?'done':''}`;
 }
 
@@ -2355,6 +2359,10 @@ function handleEvent(evt) {
       }
       const s = step.status||'';
       if (s==='running') { updateStepStatus(domId,'running'); openStep(domId); updatePlanMini(step.id,'running'); }
+      else if (s==='pending') {
+        // Step is paused waiting for user input — show as "waiting" without completing
+        updateStepStatus(domId,'pending'); updatePlanMini(step.id,'pending');
+      }
       else if (s==='completed'||s==='failed') {
         updateStepStatus(domId,s); updatePlanMini(step.id,s); updatePlanBarCount();
         captureStepSnapshot(domId, step.description || '');
@@ -2661,7 +2669,12 @@ async function doReconnect(agentSid) {
     tpStatus.textContent='Menyambungkan kembali...';
     showToast('AI masih berjalan — menyambungkan kembali...', 'info');
 
-    const resp = await fetch(`/api/agent/stream/${agentSid}`, { signal: (S.abortCtrl = new AbortController()).signal });
+    if (S.abortCtrl) { try { S.abortCtrl.abort(); } catch {} }
+    S.streamGen = (S.streamGen || 0) + 1;
+    const myGen = S.streamGen;
+    S.abortCtrl = new AbortController();
+
+    const resp = await fetch(`/api/agent/stream/${agentSid}`, { signal: S.abortCtrl.signal });
     if (!resp.ok) { localStorage.removeItem('dzeck_active_agent_sid'); setStreaming(false); return; }
 
     const reader = resp.body.getReader();
@@ -2676,11 +2689,11 @@ async function doReconnect(agentSid) {
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         const d = line.slice(6).trim();
-        if (d==='[DONE]') { finalize(); return; }
+        if (d==='[DONE]') { if (myGen === S.streamGen) finalize(); return; }
         try { handleEvent(JSON.parse(d)); } catch(e) {}
       }
     }
-    finalize();
+    if (myGen === S.streamGen) finalize();
   } catch(err) {
     if (err.name==='AbortError') return;
     localStorage.removeItem('dzeck_active_agent_sid');
@@ -2736,8 +2749,14 @@ async function doSend(text, attachments) {
     tpStatus.textContent = 'Memproses...';
   }
 
+  // Abort any previous stream before starting new one
+  if (S.abortCtrl) { try { S.abortCtrl.abort(); } catch {} S.abortCtrl = null; }
+
   setStreaming(true);
   try { showThinking(); } catch(e) { console.warn('[think]', e); }
+
+  S.streamGen = (S.streamGen || 0) + 1;
+  const myGen = S.streamGen;
   S.abortCtrl = new AbortController();
 
   try {
@@ -2767,11 +2786,11 @@ async function doSend(text, attachments) {
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         const d = line.slice(6).trim();
-        if (d==='[DONE]') { finalize(); return; }
+        if (d==='[DONE]') { if (myGen === S.streamGen) finalize(); return; }
         try { handleEvent(JSON.parse(d)); } catch (e) { console.warn('[SSE parse]', d.substring(0, 100), e); }
       }
     }
-    finalize();
+    if (myGen === S.streamGen) finalize();
   } catch(err) {
     if (err.name==='AbortError') return;
     showToast('Gagal terhubung ke AI. Coba lagi.');

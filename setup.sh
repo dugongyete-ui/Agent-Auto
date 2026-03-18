@@ -153,20 +153,18 @@ fi
 # ═══════════════════════════════════════════════════════════════════════════════
 print_step "Menginstall SEMUA Python packages untuk Agent AI..."
 print_info "pydantic · requests · aiohttp · httpx · beautifulsoup4"
-print_info "flask · flask-cors · playwright · e2b · redis · motor · websockify"
+print_info "playwright · e2b · redis · motor · websockify"
 print_info "lxml · aiofiles · dnspython · pymongo · certifi"
 
 $PYTHON -m pip install $PIP_FLAGS \
-  "pydantic>=2.0.0" \
+  "pydantic>=2.10.0" \
   "requests>=2.28.0" \
   "aiohttp>=3.8.0" \
   "httpx>=0.24.0" \
   "beautifulsoup4>=4.12.0" \
   "lxml>=4.9.0" \
-  "flask>=3.0.0" \
-  "flask-cors>=4.0.0" \
-  "playwright>=1.40.0" \
-  "e2b>=0.8.0" \
+  "playwright>=1.50.0" \
+  "e2b>=2.0.0" \
   "redis>=5.0.0" \
   "motor>=3.0.0" \
   "pymongo>=4.0.0" \
@@ -202,8 +200,6 @@ check_py "aiohttp"       "aiohttp"
 check_py "httpx"         "httpx"
 check_py "bs4"           "beautifulsoup4"
 check_py "lxml"          "lxml"
-check_py "flask"         "flask"
-check_py "flask_cors"    "flask-cors"
 check_py "playwright"    "playwright"
 check_py "e2b"           "e2b"
 check_py "redis"         "redis"
