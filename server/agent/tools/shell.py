@@ -16,7 +16,13 @@ from typing import Optional, Dict, Any, Callable
 from server.agent.models.tool_result import ToolResult
 from server.agent.tools.base import BaseTool, tool
 
-E2B_ENABLED = bool(os.environ.get("E2B_API_KEY", ""))
+_E2B_API_KEY_AT_IMPORT = os.environ.get("E2B_API_KEY", "")
+E2B_ENABLED = bool(_E2B_API_KEY_AT_IMPORT)
+
+
+def _is_e2b_enabled() -> bool:
+    """Dynamic E2B check — re-reads env each call so late-set secrets are picked up."""
+    return bool(os.environ.get("E2B_API_KEY", "") or _E2B_API_KEY_AT_IMPORT)
 
 _shell_sessions: Dict[str, Dict[str, Any]] = {}
 _sessions_lock = threading.Lock()
@@ -495,6 +501,9 @@ def _check_system_dir_deletion(command: str) -> Optional[str]:
 def shell_exec(command: str, exec_dir: str = "/home/ubuntu", id: str = "default") -> ToolResult:
     """Execute a shell command. Uses E2B cloud sandbox when available, refuses local execution."""
     exec_dir = exec_dir or "/home/ubuntu"
+    # Dynamic check — re-reads env in case secret was set after module import
+    global E2B_ENABLED
+    E2B_ENABLED = _is_e2b_enabled()
 
     gui_detected = _is_gui_command(command)
     if gui_detected:

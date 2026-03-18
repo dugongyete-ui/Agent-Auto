@@ -15,7 +15,13 @@ from typing import Optional, Any, Dict
 
 logger = logging.getLogger(__name__)
 
-E2B_API_KEY = os.environ.get("E2B_API_KEY", "")
+_E2B_API_KEY_AT_IMPORT = os.environ.get("E2B_API_KEY", "")
+E2B_API_KEY = _E2B_API_KEY_AT_IMPORT
+
+
+def _get_api_key() -> str:
+    """Re-read E2B_API_KEY from env each time — handles late-set secrets."""
+    return os.environ.get("E2B_API_KEY", "") or _E2B_API_KEY_AT_IMPORT
 
 _sandbox_lock = threading.Lock()
 _sandbox: Optional[Any] = None
@@ -150,15 +156,17 @@ def _push_sandbox_configs(sb: Any) -> None:
 def _create_sandbox() -> Optional[Any]:
     """Create a new E2B sandbox instance with retry logic."""
     global _sandbox_create_attempts
-    if not E2B_API_KEY:
-        logger.error("[E2B] E2B_API_KEY not set. Cannot create sandbox.")
+    api_key = _get_api_key()
+    if not api_key:
+        logger.error("[E2B] E2B_API_KEY not set. Cannot create sandbox. "
+                     "Set E2B_API_KEY in Replit Secrets then restart the backend.")
         return None
 
     for attempt in range(1, _MAX_CREATE_ATTEMPTS + 1):
         try:
             from e2b import Sandbox
             logger.info("[E2B] Creating new sandbox (attempt %d/%d)...", attempt, _MAX_CREATE_ATTEMPTS)
-            sb = Sandbox.create(api_key=E2B_API_KEY, timeout=900)
+            sb = Sandbox.create(api_key=api_key, timeout=900)
             logger.info("[E2B] Sandbox ready (id=%s). Setting up workspace...", sb.sandbox_id)
 
             session_ws = get_session_workspace()
