@@ -21,6 +21,14 @@ FILE RULES
 - When merging text files, always use append mode of the file writing tool to concatenate content to the target file
 - Never use list formats in any files except todo.md
 - Provide all relevant files as attachments in messages, as users may not have direct access to the local filesystem
+- All deliverable files for user must be saved to /home/ubuntu/output/
+
+SKILLS SYSTEM
+- Skills are modular knowledge packages at /home/ubuntu/skills/<skill-name>/
+- Each skill: SKILL.md (frontmatter + instructions), scripts/, references/, templates/
+- Check available skills at /home/ubuntu/skills/ before starting complex file tasks
+- Skills may provide specialized scripts for specific file formats (PDF, DOCX, Excel, etc.)
+- To create a new skill: python3 /home/ubuntu/skills/skill-creator/scripts/init_skill.py <skill-name>
 
 AVAILABLE FILE TOOLS
 

@@ -35,6 +35,8 @@ System Environment:
 - Ubuntu 22.04 (linux/amd64) with internet access
 - User: ubuntu, with sudo privileges
 - Home directory: /home/ubuntu
+- Standard directories: /home/ubuntu/skills/, /home/ubuntu/Downloads/, /home/ubuntu/upload/, /home/ubuntu/output/
+- Status marker file: /home/ubuntu/sandbox.txt
 
 Development Environment:
 - Python 3.10.12 (commands: python3, pip3)
@@ -44,6 +46,16 @@ Development Environment:
 Sleep Settings:
 - Sandbox environment is immediately available at task start, no check needed
 - Inactive sandbox environments automatically sleep and wake up
+
+SKILLS SYSTEM
+- Skills are modular knowledge packages stored at /home/ubuntu/skills/<skill-name>/
+- Each skill has a SKILL.md (YAML frontmatter + instructions), optional scripts/, references/, templates/
+- At task start, scan available skills: list /home/ubuntu/skills/ and read SKILL.md frontmatter to find relevant ones
+- Load full skill body only after confirming it is relevant to the current task
+- Run skill scripts directly: python3 /home/ubuntu/skills/<skill-name>/scripts/<script.py>
+- To create a new skill: python3 /home/ubuntu/skills/skill-creator/scripts/init_skill.py <skill-name>
+- To validate a skill: python3 /home/ubuntu/skills/skill-creator/scripts/quick_validate.py <skill-name>
+- Deliver a completed skill to user by attaching: /home/ubuntu/skills/<skill-name>/SKILL.md
 
 AVAILABLE SHELL TOOLS
 

@@ -19,6 +19,34 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - Do not make changes to the `app/` folder without explicit instruction.
 - All prompts should be in Bahasa Indonesia by default.
 
+## Recent Updates (March 2026 — Session 13: Manus Skill System Implementation)
+- **Skill System diimplementasikan:** Paket `skill-creator` dari Manus.im diekstrak dan ditempatkan di `server/agent/sandbox_config/skills/skill-creator/` dengan struktur lengkap: `SKILL.md`, `scripts/init_skill.py`, `scripts/quick_validate.py`, `references/`.
+- **System prompt diperbarui:** Ditambahkan `<skills_module>` yang mengajarkan Dzeck cara menemukan, memuat, dan menggunakan skills, serta cara membuat skill baru menggunakan `init_skill.py`.
+- **Agent prompts diperbarui:** `code_agent.py` dan `files_agent.py` kini mengetahui sistem skill dan kapan harus menggunakannya.
+- **Sudo fix untuk sandbox:** `_create_sandbox()` kini menggunakan `sudo mkdir -p /home/ubuntu` agar workspace berhasil dibuat meski user sandbox bukan `ubuntu`.
+- **Sudo fix untuk config push:** `_push_sandbox_configs()` kini menggunakan `sudo` untuk file yang di-push ke `/etc/`, `/usr/`, `/opt/`.
+- **Chromium policy aktif:** `manus-downloads.json` berhasil di-push ke `/etc/chromium/policies/managed/` di dalam sandbox.
+- **File cleanup:** ZIP arsip dan file `.skill` sementara dihapus; `attached_assets/` dibersihkan dari file tidak perlu.
+- **`@assets` alias diperbarui:** `vite.config.ts` alias `@assets` dipindahkan dari `attached_assets/` ke `client/src/assets/`.
+
+## Sandbox Config Structure
+```
+server/agent/sandbox_config/
+├── etc/
+│   └── chromium/policies/managed/manus-downloads.json
+└── skills/
+    └── skill-creator/
+        ├── SKILL.md
+        ├── LICENSE.txt
+        ├── scripts/
+        │   ├── init_skill.py
+        │   └── quick_validate.py
+        └── references/
+            ├── workflows.md
+            ├── output-patterns.md
+            └── progressive-disclosure-patterns.md
+```
+
 ## Recent Updates (March 2026 — Session 12: E2B Fix & System Status UI)
 - **Root cause E2B ditemukan & diperbaiki:** Backend server berjalan sebelum E2B_API_KEY dan CF_API_KEY dikonfigurasi. Setelah server di-restart, kedua key terdeteksi: `[E2B] Cloud sandbox mode enabled`.
 - **Bug `_persist_event` diperbaiki:** Method ini menggunakan syntax JavaScript `.then()` yang tidak valid di Python. Diperbaiki menggunakan `store = await svc._get_session_store(); await store.save_event(...)`.
