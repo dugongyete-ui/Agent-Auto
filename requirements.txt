@@ -1,5 +1,5 @@
 # ─── Dzeck AI — Python Dependencies ──────────────────────────────────────────
-# Sync: March 2026 (Session 12) | Multi-Agent Architecture (Cloudflare Workers AI)
+# Sync: March 2026 (Session 16) | Multi-Agent Architecture (Cloudflare Workers AI)
 # Install: pip install -r requirements.txt
 # Atau: bash setup.sh (install semuanya termasuk Node.js + Expo)
 
@@ -37,3 +37,4 @@ dnspython>=2.4.0
 
 # ── VNC / Display ────────────────────────────────────────────────────────────
 websockify>=0.10.0
+PyYAML>=6.0.0

@@ -19,6 +19,24 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - Do not make changes to the `app/` folder without explicit instruction.
 - All prompts should be in Bahasa Indonesia by default.
 
+## Recent Updates (March 2026 — Session 16: Python + Cloudflare AI Fix)
+- **Python 3.11 diinstall:** Module `python-3.11` ditambahkan ke environment Replit — mengatasi error `spawn python3 ENOENT` yang menyebabkan semua permintaan AI gagal.
+- **PyYAML diinstall:** Package `PyYAML` (yang diperlukan `agent_flow.py`) diinstall via pip ke `.pythonlibs/`.
+- **CF environment variables dikonfigurasi:** Set 4 env vars shared yang hilang:
+  - `CF_ACCOUNT_ID=6c807fe58ad83714e772403cd528dbeb`
+  - `CF_GATEWAY_NAME=dzeck`
+  - `CF_MODEL=@cf/meta/llama-3-8b-instruct`
+  - `CF_AGENT_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast`
+- **AI agent berfungsi penuh:** Verifikasi `/api/agent` endpoint — response streaming berhasil dari Cloudflare Workers AI.
+
+## Recent Updates (March 2026 — Session 15: Web & Expo Go Fix)
+- **`server/index.ts` dipulihkan ke versi original:** Mengembalikan `configureExpoAndLanding()` yang melayani `server/templates/web-chat.html` langsung di URL root (`/`), sehingga web dapat diakses kembali. Sebelumnya menggunakan Vite kosong yang selalu 404.
+- **`server/routes.ts` dipulihkan ke versi original:** Mengembalikan semua API endpoint lengkap (`/api/agent`, `/api/chat`, `/api/sessions`, VNC WebSocket, file upload, dll).
+- **`server/templates/` dibuat:** Menyalin 3 template HTML asli: `web-chat.html`, `landing-page.html`, `vnc-view.html`.
+- **`multer` diinstall:** Dependency yang dibutuhkan `routes.ts` untuk file upload.
+- **Expo Go QR Code diperbaiki:** Workflow Expo Go beralih dari `--tunnel` (ngrok) ke `--lan` dengan `REACT_NATIVE_PACKAGER_HOSTNAME=$REPLIT_DEV_DOMAIN` sehingga tidak butuh ngrok.
+- **`metro.config.cjs` diperbaiki:** Tambah `blockList` untuk folder `.local` agar Metro tidak crash saat ada file sementara yang hilang.
+
 ## Recent Updates (March 2026 — Session 14: Syntax Validation Fix & File Delivery)
 - **`_validate_python_syntax` diperbaiki:** Sebelum menjalankan `py_compile`, kini memeriksa keberadaan file di E2B sandbox terlebih dahulu. Jika file tidak ada → pesan "file_not_found" yang jelas (bukan "syntax FAILED"). Juga handle "file_disappeared" jika sandbox reset di tengah jalan. Resolve path fallback: coba `exec_dir/script.py` → `WORKSPACE_DIR/script.py`.
 - **File dikirim di error path:** `run_async` kini emit `files` event sebelum `done` event di path exception — sehingga file yang sudah dibuat tetap terkirim ke user meski agent gagal.

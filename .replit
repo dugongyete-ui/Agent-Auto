@@ -1,17 +1,26 @@
-modules = ["nodejs-20", "web", "postgresql-16"]
+modules = ["nodejs-20", "web", "postgresql-16", "python-3.11"]
 run = "npm run dev"
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
+packages = ["cacert", "gitFull", "libxcrypt", "libyaml", "playwright-driver", "xcodebuild", "zlib"]
 
 [[ports]]
 localPort = 5000
 externalPort = 80
 
 [[ports]]
+localPort = 5910
+externalPort = 3001
+
+[[ports]]
 localPort = 8081
 externalPort = 8081
+
+[[ports]]
+localPort = 8082
+externalPort = 3000
 
 [env]
 PORT = "5000"
@@ -62,3 +71,11 @@ args = "NODE_OPTIONS='--no-experimental-require-module' REACT_NATIVE_PACKAGER_HO
 
 [agent]
 expertMode = true
+
+[userenv]
+
+[userenv.shared]
+CF_ACCOUNT_ID = "6c807fe58ad83714e772403cd528dbeb"
+CF_GATEWAY_NAME = "dzeck"
+CF_MODEL = "@cf/meta/llama-3-8b-instruct"
+CF_AGENT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"

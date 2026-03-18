@@ -91,19 +91,21 @@ print_info "react-native, react-native-gesture-handler, react-native-safe-area-c
 
 EXPO_PKGS=(
   "expo@~53.0.0"
-  "expo-router@~4.0.0"
+  "expo-router@~5.0.0"
   "expo-status-bar@~2.2.0"
-  "expo-splash-screen@~0.29.0"
+  "expo-splash-screen@~0.30.0"
   "expo-font@~13.3.0"
-  "expo-web-browser@~14.0.0"
-  "expo-constants@~17.0.0"
-  "expo-linking@~7.0.0"
+  "expo-web-browser@~14.1.0"
+  "expo-constants@~17.1.0"
+  "expo-linking@~7.1.0"
   "expo-system-ui@~4.0.0"
-  "react-native@0.79.0"
+  "react-native@^0.79.7"
   "react-native-gesture-handler@~2.24.0"
-  "react-native-safe-area-context@5.4.0"
+  "react-native-safe-area-context@~5.4.0"
   "react-native-screens@~4.10.0"
-  "react-native-reanimated@~3.17.0"
+  "react-native-reanimated@~3.17.4"
+  "react-native-web@^0.20.0"
+  "react-native-keyboard-controller@~1.16.0"
   "@react-native-async-storage/async-storage@2.1.2"
   "@react-navigation/native@^7.0.0"
 )
@@ -154,7 +156,7 @@ fi
 print_step "Menginstall SEMUA Python packages untuk Agent AI..."
 print_info "pydantic · requests · aiohttp · httpx · beautifulsoup4"
 print_info "playwright · e2b · redis · motor · websockify"
-print_info "lxml · aiofiles · dnspython · pymongo · certifi"
+print_info "lxml · aiofiles · dnspython · pymongo · certifi · PyYAML"
 
 $PYTHON -m pip install $PIP_FLAGS \
   "pydantic>=2.10.0" \
@@ -176,6 +178,7 @@ $PYTHON -m pip install $PIP_FLAGS \
   "idna>=3.4" \
   "multidict>=6.0.0" \
   "yarl>=1.9.0" \
+  "PyYAML>=6.0.0" \
   2>&1 | tail -5
 
 print_ok "Semua Python packages berhasil diinstall"
@@ -207,6 +210,7 @@ check_py "motor"         "motor"
 check_py "pymongo"       "pymongo"
 check_py "aiofiles"      "aiofiles"
 check_py "websockify"    "websockify"
+check_py "yaml"          "PyYAML"
 
 if [ ${#FAILED_PY[@]} -eq 0 ]; then
   print_ok "Semua Python packages terverifikasi"
