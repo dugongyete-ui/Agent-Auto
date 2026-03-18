@@ -242,7 +242,10 @@ class CacheStore:
         """Close the Redis connection."""
         if self._client:
             try:
-                await self._client.close()
+                if hasattr(self._client, 'aclose'):
+                    await self._client.aclose()
+                else:
+                    await self._client.close()
             except Exception:
                 pass
             self._connected = False
