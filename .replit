@@ -53,12 +53,12 @@ outputType = "webview"
 name = "Expo Go"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "NODE_OPTIONS='--no-experimental-require-module' ./node_modules/.bin/expo start --tunnel"
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "NODE_OPTIONS='--no-experimental-require-module' REACT_NATIVE_PACKAGER_HOSTNAME=$(echo $REPLIT_DEV_DOMAIN) ./node_modules/.bin/expo start --lan"
 
 [agent]
 expertMode = true
