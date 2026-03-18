@@ -1003,6 +1003,8 @@ const S = {
   _lastPanelArg: '',
   _lastPanelIcon: '',
   _isAskMsg: false,
+  // Waiting for user reply (mid-plan pause)
+  waitingForUser: false,
 };
 
 function newSession(firstMessage) {
@@ -1169,6 +1171,7 @@ function startNewChat(clearHistory) {
   S.historyIdx = -1;
   S._liveTermHTML = null;
   S._liveUrl = '-';
+  S.waitingForUser = false;
   document.getElementById('tp-history-nav')?.classList.remove('show');
   document.getElementById('tp-history-bar')?.classList.remove('show');
 
@@ -2450,6 +2453,25 @@ function handleEvent(evt) {
     }
 
     case 'done': finalize(); break;
+
+    case 'waiting_for_user': {
+      // AI is pausing mid-plan to wait for user's answer
+      S.waitingForUser = true;
+      hideThinking();
+      // Re-enable input so user can type their reply
+      setStreaming(false);
+      // Update UI cues
+      if (inputEl) {
+        inputEl.placeholder = 'Ketik balasan untuk Dzeck...';
+        setTimeout(() => inputEl.focus(), 150);
+      }
+      tpStatus.textContent = 'Menunggu jawaban kamu...';
+      // Update status dot to indicate waiting (yellow)
+      const dot = document.getElementById('status-dot');
+      if (dot) dot.style.background = 'var(--warning)';
+      break;
+    }
+
     case 'error': {
       hideThinking();
       const rawErr = evt.error || 'Terjadi kesalahan';
@@ -2594,7 +2616,14 @@ function finalize() {
   S.aiBodyEl=null; S.aiContent='';
   S.currentStepId=null;
 
-  // Force all plan steps to completed so plan bar never stays in loading state
+  if (S.waitingForUser) {
+    // AI paused mid-plan to ask user — do NOT force-complete remaining steps
+    // Input was already re-enabled in the waiting_for_user handler
+    scrollBottom(true);
+    return;
+  }
+
+  // AI truly finished — force all remaining steps to completed so plan bar never freezes
   if (S.plan && S.plan.steps) {
     S.plan.steps.forEach(st => {
       if (st.status !== 'completed' && st.status !== 'failed') {
@@ -2666,6 +2695,9 @@ async function doSend(text, attachments) {
   if ((!text&&(!attachments||!attachments.length))||S.isStreaming) return;
   attachments = attachments||[];
 
+  // Detect if this is a continuation (user answering mid-plan question)
+  const isContinuation = S.waitingForUser;
+
   // Init session if new
   if (!S.currentSession) {
     S.currentSession = newSession(text||attachments[0]?.filename||'File');
@@ -2677,18 +2709,32 @@ async function doSend(text, attachments) {
 
   appendUserMsg(text, attachments);
 
-  S.plan=null; S.stepEls={}; S.toolEls={}; S.toolsByStep={}; S.currentStepId=null;
-  S.planPrefix = '';
-  S.stepHistory=[]; S.historyIdx=-1; S._liveTermHTML=null; S._liveUrl='-';
-  document.getElementById('tp-history-nav')?.classList.remove('show');
-  document.getElementById('tp-history-bar')?.classList.remove('show');
-  planBarEl.classList.remove('visible');
-  planMiniEl.innerHTML = '';
-  tpToolInfo.style.display='none'; tpStatus.textContent='Memproses...';
-  const tpTermOut = document.getElementById('tp-term-output');
-  if (tpTermOut) tpTermOut.innerHTML = '';
-  document.getElementById('tp-terminal-area')?.classList.remove('active');
-  document.getElementById('tp-browser-area').style.display = '';
+  // Reset waiting state
+  S.waitingForUser = false;
+  if (inputEl) inputEl.placeholder = 'Berikan tugas untuk Dzeck AI...';
+  const statusDot = document.getElementById('status-dot');
+  if (statusDot) statusDot.style.background = '';
+
+  if (isContinuation) {
+    // Keep existing plan UI visible — just resume from where we left off
+    S.currentStepId = null;
+    tpStatus.textContent = 'Melanjutkan...';
+  } else {
+    // Fresh task — reset all plan/step state
+    S.plan=null; S.stepEls={}; S.toolEls={}; S.toolsByStep={}; S.currentStepId=null;
+    S.planPrefix = '';
+    S.stepHistory=[]; S.historyIdx=-1; S._liveTermHTML=null; S._liveUrl='-';
+    document.getElementById('tp-history-nav')?.classList.remove('show');
+    document.getElementById('tp-history-bar')?.classList.remove('show');
+    planBarEl.classList.remove('visible');
+    planMiniEl.innerHTML = '';
+    tpToolInfo.style.display='none';
+    const tpTermOut = document.getElementById('tp-term-output');
+    if (tpTermOut) tpTermOut.innerHTML = '';
+    document.getElementById('tp-terminal-area')?.classList.remove('active');
+    document.getElementById('tp-browser-area').style.display = '';
+    tpStatus.textContent = 'Memproses...';
+  }
 
   setStreaming(true);
   try { showThinking(); } catch(e) { console.warn('[think]', e); }
@@ -2699,7 +2745,13 @@ async function doSend(text, attachments) {
     const resp = await fetch('/api/agent', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ message:text||'[File dilampirkan]', messages, session_id:S.sessionId, attachments }),
+      body: JSON.stringify({
+        message: text||'[File dilampirkan]',
+        messages,
+        session_id: S.sessionId,
+        attachments,
+        is_continuation: isContinuation,
+      }),
       signal: S.abortCtrl.signal,
     });
     if (!resp.ok) throw new Error(`${resp.status}`);

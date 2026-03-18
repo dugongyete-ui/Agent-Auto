@@ -1,10 +1,10 @@
 # ─── Dzeck AI — Python Dependencies ──────────────────────────────────────────
-# Sync: March 2026 | Multi-Agent Architecture (Cloudflare Workers AI)
+# Sync: March 2026 (Session 12) | Multi-Agent Architecture (Cloudflare Workers AI)
 # Install: pip install -r requirements.txt
 # Atau: bash setup.sh (install semuanya termasuk Node.js + Expo)
 
 # ── Core / Data Validation ────────────────────────────────────────────────────
-pydantic>=2.0.0
+pydantic>=2.10.0
 
 # ── HTTP / Web ────────────────────────────────────────────────────────────────
 requests>=2.28.0
@@ -23,15 +23,11 @@ lxml>=4.9.0
 # ── Async File I/O ────────────────────────────────────────────────────────────
 aiofiles>=23.0.0
 
-# ── Web Framework (Python side) ───────────────────────────────────────────────
-flask>=3.0.0
-flask-cors>=4.0.0
-
 # ── Browser Automation ───────────────────────────────────────────────────────
-playwright>=1.40.0
+playwright>=1.50.0
 
-# ── E2B Cloud Sandbox ─────────────────────────────────────────────────────────
-e2b>=0.8.0
+# ── E2B Cloud Sandbox (v2 API — installed: 2.15.3) ───────────────────────────
+e2b>=2.0.0
 
 # ── Database / Cache ─────────────────────────────────────────────────────────
 redis>=5.0.0
