@@ -114,15 +114,20 @@ def get_sandbox() -> Optional[Any]:
 
 
 def _push_sandbox_configs(sb: Any) -> None:
-    """Push all config files from server/agent/sandbox_config/ into the E2B sandbox.
+    """Push all config files from server/agent/config_manus_sandbox/ into the E2B sandbox.
     This applies Manus-standard skills, Chromium policies, and other configs."""
+    import hashlib as _hashlib
     import pathlib
     import shlex as _shlex
 
-    config_root = pathlib.Path(__file__).parent.parent / "sandbox_config"
+    config_root = pathlib.Path(__file__).parent.parent / "config_manus_sandbox"
     if not config_root.exists():
-        logger.warning("[E2B] sandbox_config dir not found, skipping config push.")
+        logger.warning("[E2B] config_manus_sandbox dir not found, skipping config push.")
         return
+
+    # Runtime dirs and files that should NOT be pushed as config
+    _SKIP_TOP_DIRS = {"terminal_full_output", "upload", "Agent-Auto"}
+    _SKIP_FILES = {"sandbox.txt"}
 
     pushed = 0
     failed = 0
@@ -130,32 +135,40 @@ def _push_sandbox_configs(sb: Any) -> None:
         if not src.is_file():
             continue
         rel = src.relative_to(config_root)
-        # Map: skills/... → /home/ubuntu/skills/...
-        #       etc/...    → /etc/...
         parts = rel.parts
-        if parts[0] == "skills":
-            dest = f"{WORKSPACE_DIR}/skills/{'/'.join(parts[1:])}"
-        elif parts[0] == "etc":
-            dest = f"/etc/{'/'.join(parts[1:])}"
-        else:
-            dest = f"{WORKSPACE_DIR}/{'/'.join(parts)}"
+
+        # Skip runtime directories and files
+        if parts[0] in _SKIP_TOP_DIRS:
+            continue
+        # For paths under home/ubuntu/, skip runtime subdirs precisely
+        if len(parts) >= 3 and parts[0] == "home" and parts[2] in _SKIP_TOP_DIRS:
+            continue
+        if parts[-1] in _SKIP_FILES:
+            continue
+
+        # config_manus_sandbox/ already uses real filesystem structure (home/, etc/, usr/, var/)
+        # so dest path is simply "/" + relative path
+        dest = "/" + "/".join(parts)
 
         try:
-            content = src.read_text(encoding="utf-8", errors="replace")
+            raw_bytes = src.read_bytes()
             parent = dest.rsplit("/", 1)[0]
-            needs_sudo = dest.startswith("/etc/") or dest.startswith("/usr/") or dest.startswith("/opt/")
+            needs_sudo = dest.startswith("/etc/") or dest.startswith("/usr/") or dest.startswith("/opt/") or dest.startswith("/var/")
             if needs_sudo:
-                tmp_dest = f"/tmp/_cfg_push_{_shlex.quote(src.name).strip(chr(39))}"
-                sb.files.write(tmp_dest, content)
+                # Write bytes to a tmp path (no sudo needed for /tmp), then sudo-copy to final dest
+                # Use a hash of the relative path for a collision-free tmp filename
+                rel_hash = _hashlib.md5(str(rel).encode()).hexdigest()[:8]
+                tmp_dest = f"/tmp/_cfg_push_{rel_hash}"
+                sb.files.write(tmp_dest, raw_bytes)
                 sb.commands.run(
                     f"sudo mkdir -p {_shlex.quote(parent)} && "
                     f"sudo cp {_shlex.quote(tmp_dest)} {_shlex.quote(dest)} && "
                     f"rm -f {_shlex.quote(tmp_dest)}",
-                    timeout=10
+                    timeout=15
                 )
             else:
                 sb.commands.run(f"mkdir -p {_shlex.quote(parent)}", timeout=10)
-                sb.files.write(dest, content)
+                sb.files.write(dest, raw_bytes)
             pushed += 1
         except Exception as exc:
             logger.warning("[E2B] Config push failed for %s → %s: %s", src.name, dest, exc)
