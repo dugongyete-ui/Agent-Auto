@@ -112,7 +112,7 @@ def file_read(
     end_line = _to_int_or_none(end_line)
     try:
         _e2b_enabled = bool(os.environ.get("E2B_API_KEY", ""))
-        is_sandbox_path = file.startswith("/home/user")
+        is_sandbox_path = file.startswith("/home/ubuntu")
 
         file_content = None
         if _e2b_enabled:
@@ -184,8 +184,8 @@ def file_write(
             write_content = write_content + "\n"
 
         _e2b_enabled = bool(os.environ.get("E2B_API_KEY", ""))
-        is_sandbox_path = file.startswith("/home/user")
-        is_output_path = "/output/" in file or file.startswith("/home/user/dzeck-ai/output")
+        is_sandbox_path = file.startswith("/home/ubuntu")
+        is_output_path = "/output/" in file or file.startswith("/home/ubuntu/output")
 
         if not _e2b_enabled:
             return ToolResult(
@@ -282,7 +282,7 @@ def file_str_replace(
     """Replace a string in a file."""
     try:
         _e2b_enabled = bool(os.environ.get("E2B_API_KEY", ""))
-        is_sandbox_path = file.startswith("/home/user")
+        is_sandbox_path = file.startswith("/home/ubuntu")
 
         if not _e2b_enabled:
             return ToolResult(
@@ -334,7 +334,7 @@ def file_str_replace(
                 data={"error": e2b_replace_err, "file": file, "e2b_write_failed": True},
             )
 
-        is_output_path = "/output/" in file or file.startswith("/home/user/dzeck-ai/output")
+        is_output_path = "/output/" in file or file.startswith("/home/ubuntu/output")
         is_deliverable = is_output_path or file.startswith("/tmp/dzeck_files")
 
         local_path = os.path.join(DZECK_FILES_DIR, os.path.basename(file))
@@ -378,7 +378,7 @@ def file_find_in_content(
     _e2b_enabled = bool(os.environ.get("E2B_API_KEY", ""))
 
     # E2B path: use grep inside sandbox
-    if _e2b_enabled and (path.startswith("/home/user") or path.startswith("/tmp")):
+    if _e2b_enabled and (path.startswith("/home/ubuntu") or path.startswith("/tmp")):
         try:
             from server.agent.tools.e2b_sandbox import run_command as e2b_run
             import shlex as _shlex
@@ -471,7 +471,7 @@ def file_find_by_name(
     _e2b_enabled = bool(os.environ.get("E2B_API_KEY", ""))
 
     # E2B path: run find command inside sandbox
-    if _e2b_enabled and (path.startswith("/home/user") or path.startswith("/tmp")):
+    if _e2b_enabled and (path.startswith("/home/ubuntu") or path.startswith("/tmp")):
         try:
             from server.agent.tools.e2b_sandbox import run_command as e2b_run
             import shlex as _shlex

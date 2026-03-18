@@ -767,7 +767,7 @@ class ShellTool(BaseTool):
         ),
         parameters={
             "id": {"type": "string", "description": "Unique session identifier (e.g. 'main', 'build', 'test'). Use the SAME id across shell_exec, shell_view, shell_wait, shell_write_to_process, and shell_kill_process to operate on the same session. A session must be created with shell_exec before it can be used by other shell tools."},
-            "exec_dir": {"type": "string", "description": "Working directory for command execution. Default: /home/user/dzeck-ai"},
+            "exec_dir": {"type": "string", "description": "Working directory for command execution. Default: /home/ubuntu"},
             "command": {"type": "string", "description": "Shell command to execute (bash syntax supported)"},
         },
         required=["id", "exec_dir", "command"],

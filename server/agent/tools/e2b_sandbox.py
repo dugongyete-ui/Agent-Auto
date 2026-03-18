@@ -295,7 +295,7 @@ def list_output_files() -> list:
     if sb is None:
         return []
     try:
-        result = sb.commands.run("ls -1 /home/user/dzeck-ai/output/ 2>/dev/null || echo ''", timeout=10)
+        result = sb.commands.run("ls -1 /home/ubuntu/output/ 2>/dev/null || echo ''", timeout=10)
         stdout = getattr(result, "stdout", "") or ""
         return [
             "{}/{}".format(OUTPUT_DIR, f.strip())

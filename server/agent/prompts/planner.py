@@ -54,11 +54,11 @@ FILE DELIVERY (CRITICAL):
 - JANGAN hanya jelaskan isi file di chat. User ingin FILE NYATA yang bisa didownload.
 
 STRUKTUR DIREKTORI WAJIB:
-- Script/kode kerja → /home/user/dzeck-ai/ (workspace, tidak muncul download)
-- File HASIL untuk user → /home/user/dzeck-ai/output/ (muncul tombol download)
+- Script/kode kerja → /home/ubuntu/ (workspace, tidak muncul download)
+- File HASIL untuk user → /home/ubuntu/output/ (muncul tombol download)
 
 ATURAN:
-- Text files: langkah pakai file_write ke /home/user/dzeck-ai/output/namafile.ext → Files Agent
+- Text files: langkah pakai file_write ke /home/ubuntu/output/namafile.ext → Files Agent
 - Binary files (.pdf, .docx, .xlsx, .zip, .png): langkah 1 = tulis script, langkah 2 = jalankan script → Code Agent
 - SELALU tambahkan langkah terakhir: "Kirim notifikasi ke user bahwa file sudah siap"
 

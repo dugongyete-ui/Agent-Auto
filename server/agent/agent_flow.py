@@ -1197,7 +1197,7 @@ class DzeckAgent:
                 )
                 sb = get_sandbox()
                 cmd = _args.get("command", "")
-                workdir = _args.get("exec_dir", "") or "/home/user/dzeck-ai"
+                workdir = _args.get("exec_dir", "") or "/home/ubuntu"
                 timeout_s = _args.get("timeout", 90)
                 if not sb:
                     return execute_tool(_res, _args)
@@ -1396,7 +1396,7 @@ Available tools:
 - file_find_by_name: Find files by glob. Args: {"path": "/dir", "glob": "*.py"}
 - file_find_in_content: Search in files. Args: {"path": "/dir", "pattern": "search_regex", "glob": "**/*"}
 - image_view: View an image. Args: {"image": "/path/to/image"}
-- shell_exec: Run shell command. Args: {"id": "sess1", "exec_dir": "/home/user/dzeck-ai", "command": "ls -la"}
+- shell_exec: Run shell command. Args: {"id": "sess1", "exec_dir": "/home/ubuntu", "command": "ls -la"}
 - shell_view: View shell session output. Args: {"id": "sess1"}
 - shell_wait: Wait then view session. Args: {"id": "sess1", "seconds": 5}
 - shell_write_to_process: Send input to process. Args: {"id": "sess1", "input": "text", "press_enter": true}

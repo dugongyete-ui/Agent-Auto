@@ -816,13 +816,13 @@ def _install_playwright_chromium() -> bool:
 
 def _remap_to_local_path(path: str) -> str:
     """Remap E2B sandbox paths to local writable paths when running locally."""
-    e2b_prefix = "/home/user/dzeck-ai"
+    e2b_prefix = "/home/ubuntu"
     if path.startswith(e2b_prefix):
         rel = path[len(e2b_prefix):]
         local = "/tmp/dzeck_workspace" + rel
         return local
-    if path.startswith("/home/user/"):
-        rel = path[len("/home/user/"):]
+    if path.startswith("/home/"):
+        rel = path[len("/home/"):]
         return "/tmp/dzeck_workspace/" + rel
     return path
 

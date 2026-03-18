@@ -11,7 +11,7 @@ from datetime import datetime
 from server.agent.models.tool_result import ToolResult
 from server.agent.tools.base import BaseTool, tool
 
-TASK_DIR = "/home/user/dzeck-ai/.tasks"
+TASK_DIR = "/home/ubuntu/.tasks"
 
 
 def _ensure_task_dir():
