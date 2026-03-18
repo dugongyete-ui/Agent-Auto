@@ -129,6 +129,12 @@ def _push_sandbox_configs(sb: Any) -> None:
     _SKIP_TOP_DIRS = {"terminal_full_output", "upload", "Agent-Auto"}
     _SKIP_FILES = {"sandbox.txt"}
 
+    # Special system files/paths that cannot be written to (virtual/proc-backed or read-only)
+    _SKIP_DEST_PATHS = {
+        "/etc/mtab",       # symlink to /proc/self/mounts, not writable
+        "/etc/resolv.conf", # managed by the sandbox network stack
+    }
+
     pushed = 0
     failed = 0
     for src in config_root.rglob("*"):
@@ -149,6 +155,10 @@ def _push_sandbox_configs(sb: Any) -> None:
         # config_manus_sandbox/ already uses real filesystem structure (home/, etc/, usr/, var/)
         # so dest path is simply "/" + relative path
         dest = "/" + "/".join(parts)
+
+        # Skip special system files that cannot be overwritten
+        if dest in _SKIP_DEST_PATHS:
+            continue
 
         try:
             raw_bytes = src.read_bytes()
