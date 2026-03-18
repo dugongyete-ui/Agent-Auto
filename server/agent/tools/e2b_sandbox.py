@@ -143,8 +143,19 @@ def _push_sandbox_configs(sb: Any) -> None:
         try:
             content = src.read_text(encoding="utf-8", errors="replace")
             parent = dest.rsplit("/", 1)[0]
-            sb.commands.run(f"mkdir -p {_shlex.quote(parent)}", timeout=10)
-            sb.files.write(dest, content)
+            needs_sudo = dest.startswith("/etc/") or dest.startswith("/usr/") or dest.startswith("/opt/")
+            if needs_sudo:
+                tmp_dest = f"/tmp/_cfg_push_{_shlex.quote(src.name).strip(chr(39))}"
+                sb.files.write(tmp_dest, content)
+                sb.commands.run(
+                    f"sudo mkdir -p {_shlex.quote(parent)} && "
+                    f"sudo cp {_shlex.quote(tmp_dest)} {_shlex.quote(dest)} && "
+                    f"rm -f {_shlex.quote(tmp_dest)}",
+                    timeout=10
+                )
+            else:
+                sb.commands.run(f"mkdir -p {_shlex.quote(parent)}", timeout=10)
+                sb.files.write(dest, content)
             pushed += 1
         except Exception as exc:
             logger.warning("[E2B] Config push failed for %s → %s: %s", src.name, dest, exc)
