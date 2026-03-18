@@ -19,6 +19,14 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - Do not make changes to the `app/` folder without explicit instruction.
 - All prompts should be in Bahasa Indonesia by default.
 
+## Recent Updates (March 2026 — Session 12: E2B Fix & System Status UI)
+- **Root cause E2B ditemukan & diperbaiki:** Backend server berjalan sebelum E2B_API_KEY dan CF_API_KEY dikonfigurasi. Setelah server di-restart, kedua key terdeteksi: `[E2B] Cloud sandbox mode enabled`.
+- **Bug `_persist_event` diperbaiki:** Method ini menggunakan syntax JavaScript `.then()` yang tidak valid di Python. Diperbaiki menggunakan `store = await svc._get_session_store(); await store.save_event(...)`.
+- **E2B streaming drain diperbaiki:** Setelah loop `while not future.done()` selesai, ditambahkan final drain untuk menangkap output yang mungkin tertinggal di queue — mencegah kehilangan output terminal.
+- **Status indicator ditambahkan ke sidebar:** Dua pill status (E2B Sandbox + CF Workers AI) muncul di sidebar dengan dot hijau/kuning + animasi pulse saat checking. Data diambil dari `/api/status` saat load halaman.
+- **`/api/status` endpoint diperkaya:** Ditambahkan field `cloudflareConfigured` agar frontend bisa menampilkan status koneksi AI model secara akurat.
+- **Verified API response:** `{"e2bEnabled":true,"cloudflareConfigured":true}` — kedua layanan aktif.
+
 ## Recent Updates (March 2026 — Session 11: VNC Black Screen Fix)
 - **Root cause identified & fixed:** Chromium crashloop disebabkan kombinasi flag `--disable-gpu` + `--disable-software-rasterizer`. Tanpa GPU hardware (`/dev/dri` tidak ada) dan software rasterizer dinonaktifkan, Chromium tidak punya rendering path sama sekali → crash exitCode 127.
 - **Nix-packaged Chromium digunakan:** Playwright's bundled Chromium (`chrome-linux64/chrome`) tidak bisa dijalankan langsung di NixOS karena library paths tidak set (libglib, libX11, dll. missing). Server sekarang menggunakan `ungoogled-chromium-131.0.6778.204` dari Nix store yang sudah di-rpath-patch dengan benar.

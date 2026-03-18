@@ -79,7 +79,12 @@ export async function registerRoutes(app: any): Promise<Server> {
   });
 
   app.get("/api/status", (_req: any, res: any) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString(), e2bEnabled: E2B_ENABLED });
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      e2bEnabled: E2B_ENABLED,
+      cloudflareConfigured: !!startupCfg.apiKey,
+    });
   });
 
   // ─── Chat endpoint ─────────────────────────────────────────────────────────

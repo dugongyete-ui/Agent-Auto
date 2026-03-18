@@ -809,9 +809,9 @@ class DzeckAgent:
         try:
             svc = await self._get_session_service()
             if svc:
-                await svc._get_session_store().then(
-                    lambda s: s.save_event(self.session_id, event_type, data)
-                )
+                store = await svc._get_session_store()
+                if store:
+                    await store.save_event(self.session_id, event_type, data)
         except Exception:
             pass
 
@@ -1269,6 +1269,20 @@ class DzeckAgent:
                 if batch:
                     chunk = "\n".join(("[stderr] " if t == "stderr" else "") + l for t, l in batch)
                     yield make_event("tool_stream", tool_call_id=tool_call_id, chunk=chunk)
+
+            # Drain any remaining items after future completes (prevents output loss)
+            final_batch = []
+            try:
+                while True:
+                    item = e2b_q.get_nowait()
+                    if item is None:
+                        break
+                    final_batch.append(item)
+            except _queue_mod.Empty:
+                pass
+            if final_batch:
+                chunk = "\n".join(("[stderr] " if t == "stderr" else "") + l for t, l in final_batch)
+                yield make_event("tool_stream", tool_call_id=tool_call_id, chunk=chunk)
 
             tool_result = await future
         else:
