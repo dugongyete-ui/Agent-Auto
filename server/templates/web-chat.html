@@ -292,8 +292,7 @@
     .step-desc.done{color:var(--muted)}
     .step-chev{font-size:11px;color:var(--muted);transition:transform .2s}
     .step-chev.open{transform:rotate(90deg)}
-    .step-tools{padding:3px 0 3px 23px;display:none;flex-direction:column;gap:4px}
-    .step-tools.open{display:flex}
+    .step-tools{padding:2px 0 2px 0;display:flex;flex-direction:column;gap:2px}
 
     /* Agent notify — inline progress note inside step card */
     .agent-notify{display:flex;align-items:flex-start;gap:6px;padding:5px 8px;margin:2px 0;
@@ -301,18 +300,21 @@
     .agent-notify-icon{flex-shrink:0;margin-top:1px;color:var(--text2);opacity:.7}
     .agent-notify-text{font-size:12px;color:var(--text2);line-height:1.5;word-break:break-word}
 
-    /* Tool chips */
-    .tool-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px 3px 7px;
-      border:1px solid var(--border);border-radius:999px;background:var(--pill-bg);
-      cursor:pointer;max-width:100%;transition:all .15s;animation:fadeUp .15s ease;
-      flex-shrink:0;width:fit-content}
-    .tool-chip:hover{border-color:var(--border2);background:var(--surface3)}
-    .tool-chip-icon{width:18px;height:18px;display:flex;align-items:center;justify-content:center;
-      flex-shrink:0;color:var(--text2)}
-    .tool-chip-fn{font-size:12px;color:var(--text2);white-space:nowrap;flex-shrink:0}
+    /* Tool chips — Manus-style flat action rows */
+    .tool-chip{display:flex;align-items:center;gap:7px;padding:5px 8px;
+      border-radius:7px;background:transparent;
+      cursor:pointer;width:100%;transition:background .12s;animation:fadeUp .15s ease;min-width:0}
+    .tool-chip:hover{background:var(--surface2)}
+    .tool-chip.calling{opacity:1}
+    .tool-chip.called{opacity:.8}
+    .tool-chip.error{opacity:1}
+    .tool-chip-icon{width:20px;height:20px;display:flex;align-items:center;justify-content:center;
+      flex-shrink:0;color:var(--muted2);opacity:.85}
+    .tool-chip-fn{font-size:12.5px;color:var(--text2);white-space:nowrap;flex-shrink:0;font-weight:500}
     .tool-chip-arg{font-size:11px;font-family:"JetBrains Mono",Menlo,monospace;color:var(--muted);
-      max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .tool-chip-spin{width:11px;height:11px;border:1.5px solid var(--muted);
+      flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+    .tool-chip-status{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:16px;height:16px}
+    .tool-chip-spin{width:12px;height:12px;border:1.5px solid var(--muted);
       border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
     .tool-screenshot{display:none !important;margin:5px 0 2px 22px;border-radius:9px;overflow:hidden;border:1px solid var(--border);
       max-width:400px;cursor:pointer;display:block;box-shadow:var(--shadow)}
@@ -513,10 +515,24 @@
     #ss-modal.open{display:flex}
     #ss-modal img{max-width:95vw;max-height:90vh;border-radius:10px;box-shadow:var(--shadow-lg)}
 
-    /* ── File delivery ── */
-    .files-delivery{margin:6px 0;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:12px}
-    .files-delivery-title{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px}
-    .files-delivery-list{display:flex;flex-wrap:wrap;gap:7px}
+    /* ── File Delivery (Manus-style cards) ── */
+    .files-delivery{margin:6px 0;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
+    .files-delivery-title{font-size:11.5px;font-weight:600;color:var(--muted2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em}
+    .files-delivery-list{display:flex;flex-direction:column;gap:6px}
+    .files-delivery-viewall{margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--accent);cursor:pointer;text-align:center;font-weight:500}
+    .files-delivery-viewall:hover{opacity:.8}
+    a.file-card{display:flex;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--border);
+      border-radius:9px;padding:8px 12px;text-decoration:none;color:var(--text);
+      transition:all .15s;cursor:pointer}
+    a.file-card:hover{border-color:var(--accent);background:var(--surface3)}
+    .file-card-icon{width:36px;height:36px;background:var(--surface3);border:1px solid var(--border);border-radius:8px;
+      display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px}
+    .file-card-info{flex:1;min-width:0}
+    .file-card-name{font-weight:500;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+    .file-card-meta{font-size:11px;color:var(--muted);margin-top:1px}
+    .file-card-dl{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:30px;height:30px;
+      border-radius:7px;background:var(--surface);border:1px solid var(--border);color:var(--accent);transition:all .15s}
+    a.file-card:hover .file-card-dl{background:var(--accent);color:#fff;border-color:var(--accent)}
     a.file-chip{display:flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--border);
       border-radius:9px;padding:7px 11px;font-size:12px;color:var(--text);text-decoration:none;
       transition:all .15s;cursor:pointer}
@@ -531,6 +547,11 @@
     .tool-terminal-header span{font-size:11px;color:#8b949e;font-family:monospace}
     .tool-terminal-header::before{content:'';width:8px;height:8px;border-radius:50%;background:#f85149;flex-shrink:0;box-shadow:12px 0 0 #f0883e,24px 0 0 #3fb950}
     .tool-terminal-output{margin:0;padding:8px 10px;font-size:11px;font-family:'Courier New',Courier,monospace;color:#e6edf3;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;background:#0d1117}
+
+    /* ── Task Completed Badge ── */
+    .task-done-badge{display:flex;align-items:center;gap:6px;padding:7px 16px;max-width:720px;margin:4px auto;
+      width:100%;font-size:12.5px;font-weight:500;color:var(--success);animation:fadeUp .2s ease}
+    .task-done-badge svg{flex-shrink:0;stroke:var(--success)}
 
     /* ── Error toast ── */
     #toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);
@@ -603,7 +624,7 @@
       </button>
     </div>
 
-    <button id="new-chat-btn" onclick="startNewChat()">
+    <button id="new-chat-btn" onclick="startNewChat(true)">
       <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Chat baru
     </button>
@@ -1069,9 +1090,10 @@ function closeSidebar() {
 // ═══════════════════════════════════════════════════
 // CHAT SESSION MANAGEMENT
 // ═══════════════════════════════════════════════════
-function startNewChat() {
+function startNewChat(clearHistory) {
   if (S.isStreaming) stopGeneration();
   closeSidebar();
+  if (clearHistory) { try { localStorage.removeItem('dzeck_last_session_id'); } catch {} }
   S.currentSession = null;
   S.sessionId = null;
   S.started = false;
@@ -1144,6 +1166,9 @@ function loadSession(id) {
   S.currentSession = session;
   S.sessionId = session.id;
 
+  // Persist last opened session
+  try { localStorage.setItem('dzeck_last_session_id', id); } catch {}
+
   // Restore messages visually
   (session.messages || []).forEach(msg => {
     if (msg.role === 'user') appendUserMsg(msg.content, true);
@@ -1154,7 +1179,7 @@ function loadSession(id) {
     }
   });
 
-  if (session.messages.length) {
+  if (session.messages && session.messages.length) {
     switchToConv();
     document.getElementById('chat-title').textContent = session.title || 'Chat';
   }
@@ -1252,9 +1277,9 @@ function getToolLabel(fn) { return TOOL_LABELS[fn] || fn || 'Tool'; }
 function getToolArg(fn, args) {
   if (!args) return '';
   const k = TOOL_ARGS[fn];
-  if (k && args[k]) return String(args[k]).substring(0,55);
+  if (k && args[k]) return String(args[k]).substring(0,90);
   const v = Object.values(args).find(v => typeof v === 'string');
-  return v ? v.substring(0,55) : '';
+  return v ? v.substring(0,90) : '';
 }
 
 function createStepRow(step, domId) {
@@ -1307,10 +1332,10 @@ function addToolChip(stepId, tcId, evt) {
   chip.id = `tc-${tcId}`;
   chip.onclick = () => showToolPanel();
   chip.innerHTML = `
-    <span class="tool-chip-icon"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg></span>
+    <span class="tool-chip-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg></span>
     <span class="tool-chip-fn">${esc(label)}</span>
-    ${arg?`<code class="tool-chip-arg" id="ta-${tcId}">${esc(arg)}</code>`:''}
-    <span id="ts-${tcId}"><span class="tool-chip-spin"></span></span>`;
+    ${arg?`<code class="tool-chip-arg" id="ta-${tcId}">${esc(arg)}</code>`:'<span class="tool-chip-arg" id="ta-${tcId}"></span>'}
+    <span class="tool-chip-status" id="ts-${tcId}"><span class="tool-chip-spin"></span></span>`;
   toolsEl.appendChild(chip);
   scrollBottom();
   S.toolEls[tcId] = { chip, type, label, fn };
@@ -1318,44 +1343,21 @@ function addToolChip(stepId, tcId, evt) {
   showToolPanel();
   updatePanelTool(type, label, arg, icon);
 
-  if (type==='shell'||type==='code') {
-    const cmd = evt.function_args?.command || arg || '';
-    if (cmd) {
-      const panelPre = document.getElementById('tp-term-output');
-      if (panelPre) {
-        const cmdSpan = document.createElement('span');
-        cmdSpan.className = 'cmd';
-        cmdSpan.textContent = '$dzeck-ai ' + cmd + '\n';
-        panelPre.appendChild(cmdSpan);
-        panelPre.scrollTop = panelPre.scrollHeight;
-      }
+  const panelPre = document.getElementById('tp-term-output');
+  if (panelPre) {
+    const cmdSpan = document.createElement('span');
+    cmdSpan.className = 'cmd';
+    if (type==='shell'||type==='code') {
+      const cmd = evt.function_args?.command || arg || '';
+      if (cmd) { cmdSpan.textContent = '$dzeck-ai ' + cmd + '\n'; panelPre.appendChild(cmdSpan); }
+    } else if (type==='search') {
+      const query = evt.function_args?.query || arg || '';
+      if (query) { cmdSpan.textContent = '🔍 Mencari: ' + query + '\n'; panelPre.appendChild(cmdSpan); }
+    } else if (type==='file') {
+      const fname = evt.function_args?.file || arg || '';
+      if (fname) { cmdSpan.textContent = '📄 ' + fn + ': ' + fname + '\n'; panelPre.appendChild(cmdSpan); }
     }
-  }
-  if (type==='search') {
-    const query = evt.function_args?.query || arg || '';
-    if (query) {
-      const panelPre = document.getElementById('tp-term-output');
-      if (panelPre) {
-        const cmdSpan = document.createElement('span');
-        cmdSpan.className = 'cmd';
-        cmdSpan.textContent = '🔍 Mencari: ' + query + '\n';
-        panelPre.appendChild(cmdSpan);
-        panelPre.scrollTop = panelPre.scrollHeight;
-      }
-    }
-  }
-  if (type==='file') {
-    const fname = evt.function_args?.file || arg || '';
-    if (fname) {
-      const panelPre = document.getElementById('tp-term-output');
-      if (panelPre) {
-        const cmdSpan = document.createElement('span');
-        cmdSpan.className = 'cmd';
-        cmdSpan.textContent = '📄 ' + fn + ': ' + fname + '\n';
-        panelPre.appendChild(cmdSpan);
-        panelPre.scrollTop = panelPre.scrollHeight;
-      }
-    }
+    panelPre.scrollTop = panelPre.scrollHeight;
   }
 }
 
@@ -1376,7 +1378,7 @@ function updateToolChip(tcId, evt) {
   if (tc?.type==='browser') {
     if (tc.url) {
       const argEl = document.getElementById(`ta-${tcId}`);
-      if (argEl) argEl.textContent = tc.url.substring(0,55);
+      if (argEl) argEl.textContent = tc.url.substring(0,90);
       tpUrlText.textContent = tc.url;
       tpUrlbar.style.display = 'flex';
     }
@@ -2364,29 +2366,73 @@ function clearTerminalStream(tcId) {
   if (termEl) termEl.remove();
 }
 
+function getFileTypeLabel(ext) {
+  const types = {
+    py:'Python Script',js:'JavaScript',ts:'TypeScript',html:'Halaman Web',css:'Stylesheet',
+    json:'JSON Data',csv:'CSV Data',txt:'Teks',md:'Markdown',
+    zip:'Arsip ZIP',tar:'Arsip TAR',gz:'Arsip GZ','7z':'Arsip 7-Zip',rar:'Arsip RAR',
+    png:'Gambar PNG',jpg:'Gambar JPEG',jpeg:'Gambar JPEG',gif:'Gambar GIF',svg:'Gambar SVG',webp:'Gambar WebP',
+    mp4:'Video MP4',mp3:'Audio MP3',wav:'Audio WAV',
+    pdf:'Dokumen PDF',docx:'Dokumen Word',xlsx:'Excel',pptx:'PowerPoint',
+    sh:'Shell Script',bat:'Batch Script',dockerfile:'Dockerfile',
+    sql:'SQL Script',xml:'XML Data',yaml:'YAML Config',yml:'YAML Config',
+    exe:'Aplikasi',bin:'Binary',db:'Database',
+  };
+  return types[ext] || (ext ? ext.toUpperCase()+' File' : 'File');
+}
+
 function renderCreatedFiles(files) {
+  if (!files || files.length === 0) return;
   const msgs = document.getElementById('messages');
   const wrap = document.createElement('div');
   wrap.className = 'msg-ai';
   const body = document.createElement('div');
   body.className = 'msg-body';
 
+  const iconMap = {
+    py:'🐍',js:'📜',ts:'📘',html:'🌐',css:'🎨',json:'📋',csv:'📊',txt:'📄',md:'📝',
+    zip:'📦',tar:'📦',gz:'📦','7z':'📦',rar:'📦',
+    png:'🖼️',jpg:'🖼️',jpeg:'🖼️',gif:'🖼️',svg:'🎨',webp:'🖼️',
+    mp4:'🎬',mp3:'🎵',wav:'🎵',
+    pdf:'📕',docx:'📘',xlsx:'📗',pptx:'📙',
+    sh:'⚡',bat:'⚡',sql:'🗃️',xml:'📋',yaml:'⚙️',yml:'⚙️',
+    exe:'⚙️',bin:'⚙️',db:'🗄️',
+  };
+
   const items = files.map(f => {
-    const ext = (f.filename||'').split('.').pop()?.toLowerCase() || '';
-    const iconMap = {py:'🐍',js:'📜',ts:'📜',html:'🌐',css:'🎨',json:'📋',csv:'📊',txt:'📄',md:'📝',zip:'📦',png:'🖼️',jpg:'🖼️',jpeg:'🖼️',gif:'🖼️',mp4:'🎬',pdf:'📄'};
+    const filename = f.filename || 'file';
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
     const icon = iconMap[ext] || '📁';
+    const typeLabel = getFileTypeLabel(ext);
     const url = f.download_url || '#';
-    return `<a href="${url}" download="${esc(f.filename||'file')}" class="file-chip" target="_blank">
-      <span class="file-chip-icon">${icon}</span>
-      <span class="file-chip-name">${esc(f.filename||'file')}</span>
-      <span class="file-chip-dl">⬇ Unduh</span>
+    const sizeStr = f.size ? formatBytes(f.size) : '';
+    const meta = [typeLabel, sizeStr].filter(Boolean).join(' · ');
+    return `<a href="${url}" download="${esc(filename)}" class="file-card" target="_blank">
+      <div class="file-card-icon">${icon}</div>
+      <div class="file-card-info">
+        <div class="file-card-name">${esc(filename)}</div>
+        <div class="file-card-meta">${esc(meta)}</div>
+      </div>
+      <div class="file-card-dl"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v10M7 10l5 5 5-5"/><line x1="5" y1="20" x2="19" y2="20"/></svg></div>
     </a>`;
   }).join('');
 
-  body.innerHTML = `<div class="files-delivery"><div class="files-delivery-title">📎 File yang dibuat</div><div class="files-delivery-list">${items}</div></div>`;
+  const viewAllTxt = files.length > 1 ? `<div class="files-delivery-viewall">Lihat semua ${files.length} file dalam tugas ini ↓</div>` : '';
+
+  body.innerHTML = `<div class="files-delivery"><div class="files-delivery-title">File yang dibuat</div><div class="files-delivery-list">${items}</div>${viewAllTxt}</div>`;
   wrap.appendChild(body);
   msgs.appendChild(wrap);
   scrollBottom(true);
+}
+
+function renderTaskCompleted() {
+  const msgs = document.getElementById('messages');
+  if (!msgs) return;
+  const el = document.createElement('div');
+  el.className = 'task-done-badge';
+  el.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Task Completed`;
+  msgs.appendChild(el);
+  scrollBottom();
 }
 
 function finalize() {
@@ -2406,6 +2452,7 @@ function finalize() {
       }
     });
     updatePlanBarCount();
+    renderTaskCompleted();
   }
 
   setStreaming(false);
@@ -2577,7 +2624,23 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape'){closeScreenshot()
 
 // ── Init
 renderHistory();
-document.getElementById('welcome-input').focus();
+
+// ── Auto-restore last session on page load
+(function() {
+  try {
+    const lastId = localStorage.getItem('dzeck_last_session_id');
+    const sessions = loadHistory();
+    if (sessions.length === 0) return;
+    const target = lastId
+      ? sessions.find(s => s.id === lastId)
+      : sessions[0];
+    if (target && target.messages && target.messages.length > 0) {
+      loadSession(target.id);
+      return;
+    }
+  } catch(e) {}
+  document.getElementById('welcome-input')?.focus();
+})();
 
 // ── Splash Screen
 (function() {

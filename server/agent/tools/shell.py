@@ -1,7 +1,7 @@
 """
 Shell execution tools for Dzeck AI Agent.
-Uses E2B cloud sandbox for isolated, secure command execution.
-Falls back to local subprocess if E2B is unavailable.
+E2B-ONLY mode: All execution runs inside E2B cloud sandbox.
+No local subprocess fallback — local execution is permanently disabled.
 
 Provides: ShellTool class + backward-compatible functions.
 """
@@ -303,8 +303,7 @@ def _auto_fix_python_syntax(script_path: str, error_msg: str, exec_dir: str) -> 
             from server.agent.tools.e2b_sandbox import read_file as _e2b_read
             content = _e2b_read(script_path)
         else:
-            with open(script_path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
+            return False  # E2B-only mode: no local file access
         if not content:
             return False
     except Exception:
@@ -341,9 +340,7 @@ def _auto_fix_python_syntax(script_path: str, error_msg: str, exec_dir: str) -> 
             from server.agent.tools.e2b_sandbox import write_file as _e2b_write
             return _e2b_write(script_path, content)
         else:
-            with open(script_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            return True
+            return False  # E2B-only mode: no local file write
     except Exception:
         return False
 
@@ -367,7 +364,11 @@ def _validate_python_syntax(command: str, exec_dir: str = "/home/user/dzeck-ai")
         if E2B_ENABLED:
             res = _run_e2b(compile_cmd, exec_dir=exec_dir, timeout=30)
         else:
-            res = _run_local(compile_cmd, exec_dir=exec_dir, timeout=30)
+            return ToolResult(
+                success=False,
+                message="[Shell] E2B sandbox diperlukan untuk validasi syntax. Tidak ada local execution.",
+                data={"error": "e2b_required", "command": command},
+            )
 
         if res.get("success", False) or res.get("exit_code", -1) == 0:
             if attempt > 1:
