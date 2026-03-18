@@ -107,6 +107,46 @@ def get_sandbox() -> Optional[Any]:
     return _sandbox
 
 
+def _push_sandbox_configs(sb: Any) -> None:
+    """Push all config files from server/agent/sandbox_config/ into the E2B sandbox.
+    This applies Manus-standard skills, Chromium policies, and other configs."""
+    import pathlib
+    import shlex as _shlex
+
+    config_root = pathlib.Path(__file__).parent.parent / "sandbox_config"
+    if not config_root.exists():
+        logger.warning("[E2B] sandbox_config dir not found, skipping config push.")
+        return
+
+    pushed = 0
+    failed = 0
+    for src in config_root.rglob("*"):
+        if not src.is_file():
+            continue
+        rel = src.relative_to(config_root)
+        # Map: skills/... → /home/ubuntu/skills/...
+        #       etc/...    → /etc/...
+        parts = rel.parts
+        if parts[0] == "skills":
+            dest = f"{WORKSPACE_DIR}/skills/{'/'.join(parts[1:])}"
+        elif parts[0] == "etc":
+            dest = f"/etc/{'/'.join(parts[1:])}"
+        else:
+            dest = f"{WORKSPACE_DIR}/{'/'.join(parts)}"
+
+        try:
+            content = src.read_text(encoding="utf-8", errors="replace")
+            parent = dest.rsplit("/", 1)[0]
+            sb.commands.run(f"mkdir -p {_shlex.quote(parent)}", timeout=10)
+            sb.files.write(dest, content)
+            pushed += 1
+        except Exception as exc:
+            logger.warning("[E2B] Config push failed for %s → %s: %s", src.name, dest, exc)
+            failed += 1
+
+    logger.info("[E2B] Config push complete: %d pushed, %d failed.", pushed, failed)
+
+
 def _create_sandbox() -> Optional[Any]:
     """Create a new E2B sandbox instance with retry logic."""
     global _sandbox_create_attempts
@@ -129,6 +169,8 @@ def _create_sandbox() -> Optional[Any]:
                 f"cd {session_ws} && echo 'workspace ready'",
                 timeout=15
             )
+
+            _push_sandbox_configs(sb)
 
             sb.commands.run(
                 "pip install --quiet reportlab python-docx openpyxl Pillow requests beautifulsoup4 "

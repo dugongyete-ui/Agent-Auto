@@ -129,6 +129,7 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - **Cache:** Redis for session state caching.
 - **Browser Automation:** Playwright (non-headless) running on a VNC display for live interaction, with HTTP fallback.
 - **Shell Sandbox:** E2B Cloud Sandbox for isolated and secure code execution, with 900s timeout, 3-attempt retry, auto-recovery, and keepalive. The workspace is `/home/ubuntu/` with output in `/home/ubuntu/output/`. Standard folders: `skills/`, `Downloads/`, `upload/`. Status marker: `/home/ubuntu/sandbox.txt`. Pre-installed packages include reportlab, python-docx, openpyxl, Pillow, yt-dlp, pandas, matplotlib.
+- **Sandbox Config Push:** `server/agent/sandbox_config/` — All files here are automatically pushed into the E2B sandbox on startup via `_push_sandbox_configs()`. Includes Manus AI skills (`skills/skill-creator/`) and Chromium policy (`etc/chromium/policies/managed/manus-downloads.json` → sets download dir to `/home/ubuntu/Downloads`). Add new skills or configs here and they will be available automatically.
 - **System Design:** Domain-Driven Design (DDD) with clear separation of Domain, Application, and Infrastructure layers.
 - **Session Management:** Full session resume and rollback support.
 - **Tooling:** Class-based tools implemented with a `BaseTool` pattern and `@tool` decorator.
