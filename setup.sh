@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 #
-# Dzeck AI — Auto Setup & Install ALL Dependencies (Sekali Jalan)
+# Dzeck AI — Auto Setup & Install ALL Dependencies
 # Jalankan dari root project: bash setup.sh
-# Diperbarui: March 2026 — Multi-Agent Architecture (Web · Data · Code · Files)
+# Diperbarui: March 2026 — Full stack: Backend + Expo Mobile + Python Agent
 #
-set -euo pipefail
+# Catatan: Script ini TIDAK menggunakan set -e supaya satu kegagalan
+# tidak menghentikan seluruh proses install.
+#
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$PROJECT_ROOT"
 
 print_step()  { echo -e "\n${BLUE}[$(date +%H:%M:%S)]${NC} ${BOLD}▶ $1${NC}"; }
 print_ok()    { echo -e "${GREEN}  ✓ $1${NC}"; }
@@ -18,49 +21,140 @@ print_error() { echo -e "${RED}  ✗ $1${NC}"; }
 print_info()  { echo -e "    ${CYAN}$1${NC}"; }
 
 echo ""
-echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}${BOLD}║     Dzeck AI — Setup & Install ALL Dependencies       ║${NC}"
-echo -e "${CYAN}${BOLD}║     Multi-Agent: Web · Data · Code · Files            ║${NC}"
-echo -e "${CYAN}${BOLD}║     LLM: Cloudflare Workers AI (llama-3.3-70b)        ║${NC}"
-echo -e "${CYAN}${BOLD}║     Orchestrator: Cloudflare Workers AI               ║${NC}"
-echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════════════════╝${NC}"
+echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}${BOLD}║        Dzeck AI — Setup & Install ALL Dependencies            ║${NC}"
+echo -e "${CYAN}${BOLD}║        Backend · Expo Mobile · Python Agent                   ║${NC}"
+echo -e "${CYAN}${BOLD}║        LLM: Cloudflare Workers AI (llama-3.3-70b)             ║${NC}"
+echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
 # ─── Deteksi Python ───────────────────────────────────────────────────────────
 print_step "Mendeteksi runtime Python & Node.js..."
+
 PYTHON=""
 for cmd in python3.11 python3.10 python3 python; do
   if command -v "$cmd" &>/dev/null; then PYTHON="$cmd"; break; fi
 done
 if [ -z "$PYTHON" ]; then
-  print_error "Python tidak ditemukan! Install Python 3.10+"
+  print_error "Python tidak ditemukan! Install Python 3.10+ dulu."
   exit 1
 fi
 print_ok "Python: $($PYTHON --version 2>&1)"
 
 if ! command -v node &>/dev/null; then
-  print_error "Node.js tidak ditemukan! Install Node.js 18+"
+  print_error "Node.js tidak ditemukan! Install Node.js 18+ dulu."
   exit 1
 fi
 print_ok "Node.js: $(node --version)  /  npm: $(npm --version)"
 
-# ─── pip flags (kompatibel Replit / sistem modern) ────────────────────────────
+# ─── pip flags ────────────────────────────────────────────────────────────────
 PIP_FLAGS="-q"
 if $PYTHON -m pip install --help 2>&1 | grep -q 'break-system'; then
   PIP_FLAGS="$PIP_FLAGS --break-system-packages"
 fi
 
-# ─── Node.js packages ─────────────────────────────────────────────────────────
-print_step "Menginstall Node.js packages (npm install)..."
-cd "$PROJECT_ROOT"
+# ═══════════════════════════════════════════════════════════════════════════════
+# BAGIAN 1: NODE.JS — Backend (Express + TypeScript)
+# ═══════════════════════════════════════════════════════════════════════════════
+print_step "Menginstall Node.js packages dari package.json (npm install)..."
 npm install --legacy-peer-deps --no-audit --no-fund 2>&1 \
-  | grep -E "added|updated|packages|warn WARN" | head -5 || true
-print_ok "Node.js packages siap"
+  | grep -E "added|updated|packages|WARN" | head -5 || true
+print_ok "Base Node.js packages siap"
 
-# ─── Python packages — SATU PERINTAH, semua sekaligus ────────────────────────
-print_step "Menginstall SEMUA Python packages (satu kali install)..."
+# ─── Packages backend yang wajib ada (mungkin belum di package.json) ─────────
+print_step "Memastikan backend packages terinstall (multer, ws, qrcode-terminal)..."
+BACKEND_PKGS=(
+  "multer@^2.1.1"
+  "@types/multer@^2.1.0"
+  "ws@^8.18.0"
+  "@types/ws@^8.5.13"
+  "qrcode-terminal@^0.12.0"
+  "@novnc/novnc@^1.5.0"
+)
+for pkg in "${BACKEND_PKGS[@]}"; do
+  pkg_name="${pkg%%@*}"
+  if [ -z "$(ls node_modules | grep "^${pkg_name}$" 2>/dev/null)" ] && \
+     [ -z "$(ls node_modules | grep "^${pkg_name%%/*}" 2>/dev/null)" ]; then
+    npm install --legacy-peer-deps --no-audit --no-fund "$pkg" 2>&1 | tail -1 || true
+    print_ok "Installed: $pkg_name"
+  else
+    print_ok "Sudah ada: $pkg_name"
+  fi
+done
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BAGIAN 2: NODE.JS — Expo Mobile (React Native)
+# ═══════════════════════════════════════════════════════════════════════════════
+print_step "Menginstall Expo & React Native packages..."
+print_info "expo, expo-router, expo-status-bar, expo-splash-screen, expo-font, expo-web-browser"
+print_info "react-native, react-native-gesture-handler, react-native-safe-area-context, dll"
+
+EXPO_PKGS=(
+  "expo@~53.0.0"
+  "expo-router@~4.0.0"
+  "expo-status-bar@~2.2.0"
+  "expo-splash-screen@~0.29.0"
+  "expo-font@~13.3.0"
+  "expo-web-browser@~14.0.0"
+  "expo-constants@~17.0.0"
+  "expo-linking@~7.0.0"
+  "expo-system-ui@~4.0.0"
+  "react-native@0.79.0"
+  "react-native-gesture-handler@~2.24.0"
+  "react-native-safe-area-context@5.4.0"
+  "react-native-screens@~4.10.0"
+  "react-native-reanimated@~3.17.0"
+  "@react-native-async-storage/async-storage@2.1.2"
+  "@react-navigation/native@^7.0.0"
+)
+
+EXPO_MISSING=()
+for pkg in "${EXPO_PKGS[@]}"; do
+  # Extract base package name (remove version spec)
+  pkg_name="${pkg%%@~*}"
+  pkg_name="${pkg_name%%@^*}"
+  pkg_name="${pkg_name%%@[0-9]*}"
+  # Check if directory exists in node_modules
+  dir_name="${pkg_name#@*/}"  # strip scope for check
+  scope_dir="${pkg_name%%/*}"
+  if [[ "$pkg_name" == @* ]]; then
+    # Scoped package: @scope/name
+    scope="${pkg_name%%/*}"
+    name="${pkg_name#*/}"
+    if [ ! -d "node_modules/${scope}/${name}" ] 2>/dev/null; then
+      EXPO_MISSING+=("$pkg")
+    fi
+  else
+    if [ ! -d "node_modules/${pkg_name}" ] 2>/dev/null; then
+      EXPO_MISSING+=("$pkg")
+    fi
+  fi
+done
+
+if [ ${#EXPO_MISSING[@]} -gt 0 ]; then
+  print_info "Menginstall ${#EXPO_MISSING[@]} Expo packages yang belum ada..."
+  npm install --legacy-peer-deps --no-audit --no-fund "${EXPO_MISSING[@]}" 2>&1 \
+    | grep -E "added|updated|packages|error|warn" | head -10 || true
+  print_ok "Expo packages diinstall"
+else
+  print_ok "Semua Expo packages sudah terinstall"
+fi
+
+# ─── Verifikasi expo CLI tersedia ─────────────────────────────────────────────
+if [ -f "node_modules/.bin/expo" ]; then
+  print_ok "Expo CLI tersedia: $(node_modules/.bin/expo --version 2>/dev/null || echo 'ok')"
+else
+  print_warn "Expo CLI tidak ditemukan di node_modules/.bin/expo"
+  print_info "Coba jalankan: npm install expo --legacy-peer-deps"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BAGIAN 3: PYTHON — Agent Dependencies
+# ═══════════════════════════════════════════════════════════════════════════════
+print_step "Menginstall SEMUA Python packages untuk Agent AI..."
 print_info "pydantic · requests · aiohttp · httpx · beautifulsoup4"
 print_info "flask · flask-cors · playwright · e2b · redis · motor · websockify"
+print_info "lxml · aiofiles · dnspython · pymongo · certifi"
 
 $PYTHON -m pip install $PIP_FLAGS \
   "pydantic>=2.0.0" \
@@ -68,52 +162,65 @@ $PYTHON -m pip install $PIP_FLAGS \
   "aiohttp>=3.8.0" \
   "httpx>=0.24.0" \
   "beautifulsoup4>=4.12.0" \
+  "lxml>=4.9.0" \
   "flask>=3.0.0" \
   "flask-cors>=4.0.0" \
   "playwright>=1.40.0" \
   "e2b>=0.8.0" \
   "redis>=5.0.0" \
   "motor>=3.0.0" \
+  "pymongo>=4.0.0" \
   "websockify>=0.10.0" \
-  2>&1 | tail -3
+  "aiofiles>=23.0.0" \
+  "dnspython>=2.4.0" \
+  "certifi>=2024.0.0" \
+  "charset-normalizer>=3.0.0" \
+  "idna>=3.4" \
+  "multidict>=6.0.0" \
+  "yarl>=1.9.0" \
+  2>&1 | tail -5
 
 print_ok "Semua Python packages berhasil diinstall"
 
-# ─── Verifikasi import setiap package ─────────────────────────────────────────
-print_step "Verifikasi import package..."
-FAILED=()
+# ─── Verifikasi Python package imports ────────────────────────────────────────
+print_step "Verifikasi import Python packages..."
+FAILED_PY=()
 
-check() {
+check_py() {
   local mod="$1" name="$2"
   if $PYTHON -c "import $mod" &>/dev/null 2>&1; then
     print_ok "$name"
   else
-    print_warn "$name — gagal diimport (opsional atau perlu server)"
-    FAILED+=("$name")
+    print_warn "$name — gagal diimport"
+    FAILED_PY+=("$name")
   fi
 }
 
-check "pydantic"    "pydantic"
-check "requests"    "requests"
-check "aiohttp"     "aiohttp"
-check "httpx"       "httpx"
-check "bs4"         "beautifulsoup4"
-check "flask"       "flask"
-check "flask_cors"  "flask-cors"
-check "playwright"  "playwright"
-check "e2b"         "e2b"
-check "redis"       "redis"
-check "motor"       "motor"
-check "websockify"  "websockify"
+check_py "pydantic"      "pydantic"
+check_py "requests"      "requests"
+check_py "aiohttp"       "aiohttp"
+check_py "httpx"         "httpx"
+check_py "bs4"           "beautifulsoup4"
+check_py "lxml"          "lxml"
+check_py "flask"         "flask"
+check_py "flask_cors"    "flask-cors"
+check_py "playwright"    "playwright"
+check_py "e2b"           "e2b"
+check_py "redis"         "redis"
+check_py "motor"         "motor"
+check_py "pymongo"       "pymongo"
+check_py "aiofiles"      "aiofiles"
+check_py "websockify"    "websockify"
 
-if [ ${#FAILED[@]} -eq 0 ]; then
-  print_ok "Semua package terverifikasi berhasil"
+if [ ${#FAILED_PY[@]} -eq 0 ]; then
+  print_ok "Semua Python packages terverifikasi"
 else
-  print_warn "Package yang gagal diverifikasi: ${FAILED[*]}"
-  print_info "Ini normal untuk package yang butuh server (redis, motor) atau X11 (websockify)"
+  print_warn "Gagal: ${FAILED_PY[*]} (mungkin butuh server/koneksi khusus)"
 fi
 
-# ─── Playwright Chromium browser ──────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# BAGIAN 4: PLAYWRIGHT CHROMIUM BROWSER
+# ═══════════════════════════════════════════════════════════════════════════════
 print_step "Menginstall Playwright Chromium browser..."
 if $PYTHON -m playwright install chromium 2>&1 | grep -v "^$"; then
   print_ok "Playwright Chromium siap"
@@ -122,21 +229,23 @@ else
   print_info "python3 -m playwright install chromium"
 fi
 
-# ─── VNC / Display stack (opsional) ───────────────────────────────────────────
-print_step "Cek sistem VNC/display (opsional — butuh replit.nix)..."
+# ═══════════════════════════════════════════════════════════════════════════════
+# BAGIAN 5: VNC / DISPLAY STACK
+# ═══════════════════════════════════════════════════════════════════════════════
+print_step "Cek stack VNC/display (opsional)..."
 VNC_MISSING=()
 for bin in Xvfb x11vnc fluxbox; do
   if command -v "$bin" &>/dev/null; then
     print_ok "$bin → $(which "$bin")"
   else
-    print_warn "$bin tidak ditemukan (opsional, tambahkan ke replit.nix jika butuh VNC)"
+    print_warn "$bin tidak ditemukan (opsional — tambahkan ke replit.nix)"
     VNC_MISSING+=("$bin")
   fi
 done
-if [ ${#VNC_MISSING[@]} -eq 0 ]; then
-  print_ok "Stack VNC siap (Xvfb + x11vnc + fluxbox)"
 
-  # Konfigurasi Fluxbox kiosk mode (tanpa toolbar, semua window maximized)
+if [ ${#VNC_MISSING[@]} -eq 0 ]; then
+  print_ok "Stack VNC lengkap (Xvfb + x11vnc + fluxbox)"
+  # Konfigurasi Fluxbox kiosk mode
   FBDIR="$HOME/.fluxbox"
   mkdir -p "$FBDIR"
   cat > "$FBDIR/init" <<'FBINIT'
@@ -158,106 +267,113 @@ FBINIT
   [Position] {0 0}
 [end]
 FBAPPS
-  print_ok "Fluxbox dikonfigurasi: kiosk mode, tanpa dekorasi"
+  print_ok "Fluxbox dikonfigurasi: kiosk mode"
 fi
 
-# ─── E2B Sandbox status ────────────────────────────────────────────────────────
-print_step "Cek E2B cloud sandbox..."
-if [ -n "${E2B_API_KEY:-}" ]; then
-  print_ok "E2B_API_KEY terdeteksi — cloud sandbox aktif"
-  print_info "Sandbox auto-install: reportlab, python-docx, openpyxl, Pillow"
-else
-  print_warn "E2B_API_KEY belum diset — shell/code tools jalan lokal"
-  print_info "Set via Replit Secrets: E2B_API_KEY"
-fi
+# ═══════════════════════════════════════════════════════════════════════════════
+# BAGIAN 6: STATUS ENVIRONMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+print_step "Cek environment variables penting..."
+
+check_env() {
+  local key="$1" label="$2"
+  if [ -n "${!key:-}" ]; then
+    print_ok "$label (${key}) → terdeteksi"
+  else
+    print_warn "$label (${key}) → belum diset"
+  fi
+}
+
+check_env "CF_API_KEY"       "Cloudflare API Key (WAJIB untuk AI)"
+check_env "CF_ACCOUNT_ID"    "Cloudflare Account ID"
+check_env "CF_GATEWAY_NAME"  "Cloudflare Gateway Name"
+check_env "E2B_API_KEY"      "E2B Sandbox API Key (untuk shell tools)"
+check_env "MONGODB_URI"      "MongoDB URI (untuk session persistence)"
+check_env "REDIS_URL"        "Redis URL (untuk caching)"
 
 # ─── Runtime directories ──────────────────────────────────────────────────────
 print_step "Membuat runtime directories..."
 mkdir -p /tmp/dzeck_files /tmp/dzeck_files/uploads
-print_ok "/tmp/dzeck_files/ siap (file hasil agent disimpan di sini)"
+print_ok "/tmp/dzeck_files/ siap"
 
-# ─── .env file ────────────────────────────────────────────────────────────────
-print_step "Cek konfigurasi .env..."
+# ─── .env file template ───────────────────────────────────────────────────────
 if [ ! -f "$PROJECT_ROOT/.env" ]; then
+  print_step "Membuat file .env template..."
   cat > "$PROJECT_ROOT/.env" <<'DOTENV'
 # ─── Dzeck AI — Environment Variables ────────────────────────────────────────
 
-# Cloudflare Workers AI (WAJIB)
+# Cloudflare Workers AI (WAJIB untuk fitur AI)
 CF_API_KEY=
 CF_ACCOUNT_ID=
 CF_GATEWAY_NAME=
 
-# Model (opsional, sudah ada default di kode)
+# Model AI (opsional — sudah ada default di kode)
 CF_MODEL=@cf/qwen/qwen3-30b-a3b-fp8
 CF_AGENT_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast
 
-# E2B Cloud Sandbox (untuk shell_exec & browser di sandbox)
+# E2B Cloud Sandbox (untuk shell_exec & code execution)
 E2B_API_KEY=
 
-# MongoDB (opsional — untuk session persistence)
+# MongoDB Atlas (opsional — session persistence)
 MONGODB_URI=
 
-# Redis (opsional — untuk caching)
+# Redis (opsional — session caching)
+REDIS_URL=
+REDIS_HOST=
+REDIS_PORT=6379
 REDIS_PASSWORD=
 
-# Session
-SESSION_SECRET=
+# Server
+PORT=5000
+NODE_ENV=development
 
-# MCP Server (opsional)
+# MCP (opsional)
 MCP_SERVER_URL=https://mcp.cloudflare.com/mcp
 MCP_AUTH_TOKEN=
 
 # Browser
 PLAYWRIGHT_ENABLED=true
-
-# Server
-PORT=5000
-NODE_ENV=development
 DOTENV
-  print_warn ".env baru dibuat — isi CF_API_KEY, E2B_API_KEY, MONGODB_URI, REDIS_PASSWORD"
+  print_warn ".env baru dibuat — isi CF_API_KEY dan lainnya sesuai kebutuhan"
+  print_info "Atau set via Replit → Secrets (Settings → Environment variables)"
 else
   print_ok ".env sudah ada"
 fi
 
-# ─── Bersihkan Python cache lama ──────────────────────────────────────────────
-print_step "Membersihkan __pycache__ lama..."
+# ─── Bersihkan Python cache ────────────────────────────────────────────────────
+print_step "Membersihkan Python __pycache__ lama..."
 find "$PROJECT_ROOT/server/agent" -type d -name "__pycache__" \
   -exec rm -rf {} + 2>/dev/null || true
-print_ok "Python cache dibersihkan"
+print_ok "Cache dibersihkan"
 
-# ─── Rangkuman Arsitektur ─────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# RANGKUMAN
+# ═══════════════════════════════════════════════════════════════════════════════
 echo ""
-echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}${BOLD}║  Arsitektur Multi-Agent Dzeck AI (March 2026)                ║${NC}"
-echo -e "${CYAN}${BOLD}╠══════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}${BOLD}║  Orchestrator → routing tiap step ke agent yang tepat        ║${NC}"
-echo -e "${CYAN}${BOLD}║  Web Agent   → browser automation, scraping, search          ║${NC}"
-echo -e "${CYAN}${BOLD}║  Data Agent  → analisis data, API datasource, visualisasi    ║${NC}"
-echo -e "${CYAN}${BOLD}║  Code Agent  → Python/shell exec, scripting, automasi        ║${NC}"
-echo -e "${CYAN}${BOLD}║  Files Agent → manajemen file, dokumen, konversi format      ║${NC}"
-echo -e "${CYAN}${BOLD}╠══════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}${BOLD}║  Browser     → E2B sandbox > Playwright headless > HTTP      ║${NC}"
-echo -e "${CYAN}${BOLD}║  Shell/Code  → E2B cloud sandbox (isolated, aman)            ║${NC}"
-echo -e "${CYAN}${BOLD}║  LLM Agent   → @cf/meta/llama-3.3-70b-instruct-fp8-fast      ║${NC}"
-echo -e "${CYAN}${BOLD}║  LLM Chat    → @cf/qwen/qwen3-30b-a3b-fp8                   ║${NC}"
-echo -e "${CYAN}${BOLD}║  Orchestrtr  → Cloudflare Workers AI (llama-3.3-70b)        ║${NC}"
-echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
-
-# ─── Selesai ──────────────────────────────────────────────────────────────────
+echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}${BOLD}║  Arsitektur Multi-Agent Dzeck AI                              ║${NC}"
+echo -e "${CYAN}${BOLD}╠═══════════════════════════════════════════════════════════════╣${NC}"
+echo -e "${CYAN}${BOLD}║  Web Agent   → browsing, scraping, search                     ║${NC}"
+echo -e "${CYAN}${BOLD}║  Data Agent  → analisis data, API, visualisasi                ║${NC}"
+echo -e "${CYAN}${BOLD}║  Code Agent  → Python/shell exec, scripting, automasi         ║${NC}"
+echo -e "${CYAN}${BOLD}║  Files Agent → manajemen file, dokumen, konversi              ║${NC}"
+echo -e "${CYAN}${BOLD}╠═══════════════════════════════════════════════════════════════╣${NC}"
+echo -e "${CYAN}${BOLD}║  LLM Agent: llama-3.3-70b-instruct-fp8-fast                  ║${NC}"
+echo -e "${CYAN}${BOLD}║  LLM Chat:  qwen3-30b-a3b-fp8                                ║${NC}"
+echo -e "${CYAN}${BOLD}║  Shell:     E2B Cloud Sandbox (isolated & secure)             ║${NC}"
+echo -e "${CYAN}${BOLD}║  Browser:   Playwright CDP via VNC display                    ║${NC}"
+echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "${GREEN}${BOLD}╔═════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}${BOLD}║  ✓  Setup SELESAI! Dzeck AI siap digunakan  ║${NC}"
-echo -e "${GREEN}${BOLD}╚═════════════════════════════════════════════╝${NC}"
+echo -e "${GREEN}${BOLD}╔═══════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}${BOLD}║  ✓  Setup SELESAI! Dzeck AI siap digunakan            ║${NC}"
+echo -e "${GREEN}${BOLD}╚═══════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  ${BOLD}Mulai backend:${NC}     ${CYAN}NODE_ENV=development tsx server/index.ts${NC}   →   http://localhost:5000"
-echo -e "  ${BOLD}Mulai Expo Go:${NC}     ${CYAN}npx expo start --web${NC}   →   http://localhost:8099"
-echo -e "  ${BOLD}Di Replit:${NC}         Gunakan workflow ${CYAN}Start Backend${NC} (webview) + ${CYAN}Start Frontend${NC} (console)"
+echo -e "  ${BOLD}Backend (Web UI):${NC}   Workflow ${CYAN}Start Backend${NC}  →  port 5000"
+echo -e "  ${BOLD}Mobile (Expo Go):${NC}   Workflow ${CYAN}Start Frontend${NC} →  port 8099"
 echo ""
-echo -e "  ${BOLD}Python packages:${NC}"
-echo -e "    ${CYAN}pydantic, requests, aiohttp, httpx, beautifulsoup4${NC}"
-echo -e "    ${CYAN}flask, flask-cors, playwright, e2b, redis, motor, websockify${NC}"
-echo ""
-echo -e "  ${BOLD}Konfigurasi:${NC}"
-echo -e "    Edit ${CYAN}.env${NC}  →  CF_API_KEY, E2B_API_KEY, MONGODB_URI, REDIS_PASSWORD, dll."
-echo -e "    Atau set sebagai Replit Secrets di Settings → Environment variables."
+echo -e "  ${BOLD}Config wajib:${NC}  Edit ${CYAN}.env${NC} atau set di Replit Secrets"
+echo -e "    - ${CYAN}CF_API_KEY${NC}       → Cloudflare Workers AI"
+echo -e "    - ${CYAN}CF_ACCOUNT_ID${NC}    → Cloudflare Account"
+echo -e "    - ${CYAN}CF_GATEWAY_NAME${NC}  → AI Gateway name"
+echo -e "    - ${CYAN}E2B_API_KEY${NC}      → E2B Cloud Sandbox (opsional)"
 echo ""

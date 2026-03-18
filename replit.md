@@ -19,6 +19,19 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - Do not make changes to the `app/` folder without explicit instruction.
 - All prompts should be in Bahasa Indonesia by default.
 
+## Recent Updates (March 2026 — Session 11: VNC Black Screen Fix)
+- **Root cause identified & fixed:** Chromium crashloop disebabkan kombinasi flag `--disable-gpu` + `--disable-software-rasterizer`. Tanpa GPU hardware (`/dev/dri` tidak ada) dan software rasterizer dinonaktifkan, Chromium tidak punya rendering path sama sekali → crash exitCode 127.
+- **Nix-packaged Chromium digunakan:** Playwright's bundled Chromium (`chrome-linux64/chrome`) tidak bisa dijalankan langsung di NixOS karena library paths tidak set (libglib, libX11, dll. missing). Server sekarang menggunakan `ungoogled-chromium-131.0.6778.204` dari Nix store yang sudah di-rpath-patch dengan benar.
+- **Watchdog diperbaiki:** Sebelumnya, ketika Chromium crash, seluruh VNC stack (Xvfb + x11vnc + fluxbox) dimatikan. Sekarang hanya Chromium yang di-restart (`launchChromiumOnly()`). VNC display tetap jalan tanpa interupsi.
+- **Splash page ditambahkan:** Chromium sekarang membuka `/vnc-splash` (halaman branded Dzeck AI bergradient dark) bukan `about:blank`. Layar tidak lagi tampak "hitam kosong" saat idle.
+- **Chromium launch direfaktor:** Logic launch Chromium diekstrak ke fungsi terpisah `launchChromiumOnly()` yang dapat dipanggil secara independen tanpa restart VNC stack.
+
+## Recent Updates (March 2026 — Session 10: Setup Script Overhaul)
+- **setup.sh completely rewritten:** Script sekarang dibagi 6 bagian terstruktur. Ditambahkan instalasi Expo & React Native packages yang sebelumnya tidak ada (expo, expo-router, expo-status-bar, expo-splash-screen, expo-font, expo-web-browser, react-native, react-native-gesture-handler, dll). Script tidak lagi menggunakan `set -euo pipefail` sehingga satu kegagalan tidak menghentikan seluruh proses.
+- **Python packages ditambahkan ke setup.sh & requirements.txt:** `lxml`, `aiofiles`, `pymongo`, `dnspython`, `certifi`, `charset-normalizer`, `multidict`, `yarl` — semua sudah diverifikasi berhasil diimport.
+- **scripts/post-merge.sh updated:** Sinkronisasi dengan setup.sh, termasuk instalasi Expo packages.
+- **requirements.txt updated:** Ditambahkan semua packages baru yang digunakan agent.
+
 ## Recent Updates (March 2026 — Session 9: Code Audit & Cleanup)
 - **Dead Code Removed:** File-file yang didefinisikan tapi tidak pernah digunakan/dipanggil dihapus:
   - `server/routes.ts.backup` → File backup lama dari routes, sudah tidak relevan.

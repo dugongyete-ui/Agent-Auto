@@ -465,6 +465,112 @@ export async function registerRoutes(app: any): Promise<Server> {
 
   let _vncStartPromise: Promise<boolean> | null = null;
 
+  // ─── Launch (or re-launch) persistent Chromium — can be called independently ─
+  async function launchChromiumOnly(): Promise<void> {
+    // Kill any stale Chromium
+    if (_chromiumProc) {
+      try { _chromiumProc.kill("SIGTERM"); } catch {}
+      _chromiumProc = null;
+    }
+    try { execSync("pkill -f 'chromium.*--remote-debugging-port' 2>/dev/null; true", { timeout: 3000 }); } catch {}
+    delete process.env.DZECK_CDP_URL;
+    await new Promise(r => setTimeout(r, 500));
+
+    // ── Find a working Chromium binary ──────────────────────────────────────
+    // Priority order:
+    //  1. NixOS-packaged Chromium (ungoogled-chromium) — properly rpath-patched,
+    //     works without LD_LIBRARY_PATH. Found in nix store.
+    //  2. Playwright's bundled Chrome — only works if LD_LIBRARY_PATH is set
+    //     (breaks on stock NixOS because shared libs aren't in standard paths).
+    //  3. Any system chromium/google-chrome on PATH.
+    let chromiumExe = "";
+
+    // 1. Nix-packaged Chromium — check known fixed paths first (fast fs.existsSync),
+    //    these are properly rpath-patched and work without LD_LIBRARY_PATH on NixOS.
+    const NIX_CHROMIUM_CANDIDATES = [
+      // Discovered at runtime — ungoogled-chromium versions available in this environment
+      "/nix/store/43y6k6fj85l4kcd1yan43hpdld6nmjmp-ungoogled-chromium-131.0.6778.204/bin/chromium",
+      "/nix/store/22pqil8ywhgwx1vdnkhr19gmaziyfc99-ungoogled-chromium-98.0.4758.102/bin/chromium",
+      "/nix/store/2rx3w289sarzpmnpfywyg2xvpjwj91yc-ungoogled-chromium-92.0.4515.159/bin/chromium",
+    ];
+    for (const candidate of NIX_CHROMIUM_CANDIDATES) {
+      if (fs.existsSync(candidate)) { chromiumExe = candidate; break; }
+    }
+
+    // 2. Playwright bundled Chrome
+    if (!chromiumExe) {
+      try {
+        const pwCacheBase = path.join(process.cwd(), ".cache", "ms-playwright");
+        const dirs = fs.readdirSync(pwCacheBase).filter((d: string) => d.startsWith("chromium-")).sort().reverse();
+        for (const d of dirs) {
+          const c1 = path.join(pwCacheBase, d, "chrome-linux64", "chrome");
+          if (fs.existsSync(c1)) { chromiumExe = c1; break; }
+          const c2 = path.join(pwCacheBase, d, "chrome-linux", "chrome");
+          if (fs.existsSync(c2)) { chromiumExe = c2; break; }
+        }
+      } catch {}
+    }
+
+    // 3. System PATH fallback
+    if (!chromiumExe) {
+      try {
+        chromiumExe = execSync(
+          "which chromium 2>/dev/null || which google-chrome 2>/dev/null || which chromium-browser 2>/dev/null",
+          { encoding: "utf-8", timeout: 2000 }
+        ).trim();
+      } catch {}
+    }
+
+    if (!chromiumExe) {
+      console.warn("[VNC] No Chromium binary found — browser will launch per-agent-session");
+      return;
+    }
+    console.log(`[VNC] Using Chromium: ${chromiumExe}`);
+
+    _chromiumProc = spawn(chromiumExe, [
+      "--no-sandbox", "--disable-dev-shm-usage", "--disable-setuid-sandbox",
+      "--disable-gpu",
+      // NOTE: --disable-software-rasterizer intentionally removed.
+      // Chromium needs software rasterizer when GPU is unavailable (no /dev/dri).
+      // Combining --disable-gpu with --disable-software-rasterizer causes an
+      // immediate crash because there is no remaining rendering path.
+      "--disable-extensions",
+      "--disable-background-timer-throttling",
+      "--disable-backgrounding-occluded-windows",
+      "--disable-renderer-backgrounding",
+      "--no-first-run", "--no-default-browser-check",
+      "--disable-sync", "--disable-default-apps",
+      "--disable-infobars", "--disable-popup-blocking",
+      "--disable-translate", "--disable-notifications",
+      "--disable-component-update",
+      "--disable-blink-features=AutomationControlled",
+      "--disable-features=TranslateUI,InfiniteSessionRestore,MediaRouter,OptimizationHints",
+      "--autoplay-policy=no-user-gesture-required",
+      "--password-store=basic", "--use-mock-keychain",
+      "--window-size=1280,720", "--window-position=0,0",
+      `--remote-debugging-port=${CDP_PORT}`,
+      "--remote-debugging-address=127.0.0.1",
+      `--user-data-dir=/tmp/dzeck-chrome-data-${Date.now()}`,
+      "http://127.0.0.1:5000/vnc-splash",
+    ], {
+      detached: true,
+      stdio: "ignore",
+      env: { ...process.env, DISPLAY: VNC_DISPLAY },
+    });
+    _chromiumProc.unref();
+
+    // Wait and verify Chromium didn't crash immediately
+    await new Promise(r => setTimeout(r, 2500));
+    if (_chromiumProc.exitCode !== null) {
+      console.error(`[VNC] Chromium crashed on launch (exitCode: ${_chromiumProc.exitCode}) — check binary or flags`);
+      _chromiumProc = null;
+      delete process.env.DZECK_CDP_URL;
+      return;
+    }
+    process.env.DZECK_CDP_URL = `http://127.0.0.1:${CDP_PORT}`;
+    console.log(`[VNC] Chromium launched (CDP port ${CDP_PORT}, exe: ${chromiumExe})`);
+  }
+
   async function ensureVncRunning(): Promise<boolean> {
     if (_vncStarted) {
       const allAlive = _vncProcs.every((p: any) => p.exitCode === null);
@@ -481,11 +587,21 @@ export async function registerRoutes(app: any): Promise<Server> {
           });
           return true;
         } catch {
-          console.log("[VNC] CDP health probe failed — Chromium hung, restarting...");
-          stopVnc();
+          console.log("[VNC] CDP health probe failed — Chromium hung, restarting Chromium only...");
+          await launchChromiumOnly();
+          vncTouch();
+          return true;
         }
+      } else if (allAlive && !chromiumAlive) {
+        // VNC stack (Xvfb + x11vnc + fluxbox) is healthy — only Chromium crashed.
+        // Restart ONLY Chromium instead of tearing down the entire display stack.
+        console.log("[VNC] Chromium crashed but VNC display is alive — restarting Chromium only...");
+        await launchChromiumOnly();
+        vncTouch();
+        return true;
       } else {
-        console.log(`[VNC] Detected dead processes (vnc=${allAlive}, chromium=${chromiumAlive}), restarting...`);
+        // Xvfb or x11vnc itself died — need full stack restart
+        console.log(`[VNC] VNC display stack dead (allAlive=${allAlive}) — full restart...`);
         stopVnc();
       }
     }
@@ -640,66 +756,8 @@ export async function registerRoutes(app: any): Promise<Server> {
         } catch {}
       }
 
-      // 6. Launch persistent Chromium with CDP for agent to connect to
-      // This browser is managed by Node.js server — survives agent process exits
-      try {
-        // Find Playwright's bundled Chromium
-        const pwCacheBase = path.join(process.cwd(), ".cache", "ms-playwright");
-        let chromiumExe = "";
-        try {
-          const dirs = fs.readdirSync(pwCacheBase).filter((d: string) => d.startsWith("chromium-")).sort().reverse();
-          for (const d of dirs) {
-            const candidate = path.join(pwCacheBase, d, "chrome-linux64", "chrome");
-            if (fs.existsSync(candidate)) { chromiumExe = candidate; break; }
-            const candidate2 = path.join(pwCacheBase, d, "chrome-linux", "chrome");
-            if (fs.existsSync(candidate2)) { chromiumExe = candidate2; break; }
-          }
-        } catch {}
-        if (!chromiumExe) {
-          try { chromiumExe = execSync("which chromium 2>/dev/null || which google-chrome 2>/dev/null || which chromium-browser 2>/dev/null", { encoding: "utf-8", timeout: 2000 }).trim(); } catch {}
-        }
-
-        if (chromiumExe) {
-          // Kill any existing Chromium first
-          try { execSync("pkill -f 'chromium.*--remote-debugging-port' 2>/dev/null; true", { timeout: 3000 }); } catch {}
-          await new Promise(r => setTimeout(r, 500));
-
-          _chromiumProc = spawnProc(chromiumExe, [
-            "--no-sandbox", "--disable-dev-shm-usage", "--disable-setuid-sandbox",
-            "--disable-gpu", "--disable-software-rasterizer",
-            "--disable-extensions",
-            "--disable-background-timer-throttling",
-            "--disable-backgrounding-occluded-windows",
-            "--disable-renderer-backgrounding",
-            "--no-first-run", "--no-default-browser-check",
-            "--disable-sync", "--disable-default-apps",
-            "--disable-infobars", "--disable-popup-blocking",
-            "--disable-translate", "--disable-notifications",
-            "--disable-component-update",
-            "--disable-blink-features=AutomationControlled",
-            "--disable-features=TranslateUI,InfiniteSessionRestore,MediaRouter,OptimizationHints",
-            "--autoplay-policy=no-user-gesture-required",
-            "--password-store=basic", "--use-mock-keychain",
-            "--window-size=1280,720", "--window-position=0,0",
-            `--remote-debugging-port=${CDP_PORT}`,
-            "--remote-debugging-address=127.0.0.1",
-            `--user-data-dir=/tmp/dzeck-chrome-data-${Date.now()}`,
-            "about:blank",
-          ], {
-            detached: true,
-            stdio: "ignore",
-            env: { ...process.env, DISPLAY: VNC_DISPLAY },
-          });
-          _chromiumProc.unref();
-          await new Promise(r => setTimeout(r, 2000));
-          process.env.DZECK_CDP_URL = `http://127.0.0.1:${CDP_PORT}`;
-          console.log(`[VNC] Persistent Chromium launched (CDP port ${CDP_PORT}, exe: ${chromiumExe})`);
-        } else {
-          console.warn("[VNC] No Chromium binary found — browser will launch per-agent-session");
-        }
-      } catch (chrErr: any) {
-        console.warn("[VNC] Failed to launch persistent Chromium:", chrErr?.message);
-      }
+      // 6. Launch persistent Chromium (delegated to launchChromiumOnly())
+      await launchChromiumOnly();
 
       _vncStarted = true;
       _vncStarting = false;
@@ -722,6 +780,47 @@ export async function registerRoutes(app: any): Promise<Server> {
   app.post("/api/vnc/start", async (_req: any, res: any) => {
     const started = await ensureVncRunning();
     res.json({ started });
+  });
+
+  // ─── VNC splash page — shown by Chromium on launch instead of about:blank ─
+  // Gives a branded dark screen so VNC never looks "black/empty".
+  app.get("/vnc-splash", (_req: any, res: any) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(`<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8"/>
+<title>Dzeck AI — Browser Siap</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; background:#0f0f1a; color:#c8c8e8;
+    font-family: 'Segoe UI', system-ui, sans-serif; overflow:hidden; }
+  .center { display:flex; flex-direction:column; align-items:center;
+    justify-content:center; height:100vh; gap:20px; }
+  .logo { font-size:48px; font-weight:700; letter-spacing:2px;
+    background:linear-gradient(135deg,#7c3aed,#4f46e5,#06b6d4);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .sub { font-size:16px; color:#6b7280; letter-spacing:1px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+    background:#7c3aed; margin:0 3px; animation:pulse 1.4s ease-in-out infinite; }
+  .dot:nth-child(2){ animation-delay:.2s; }
+  .dot:nth-child(3){ animation-delay:.4s; }
+  @keyframes pulse { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
+  .status { font-size:13px; color:#4b5563; margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="center">
+  <div class="logo">Dzeck AI</div>
+  <div class="sub">Browser siap &bull; Menunggu instruksi agent</div>
+  <div style="margin-top:4px">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+  </div>
+  <div class="status">CDP port 9222 aktif &bull; Ketik tugas di chat untuk memulai</div>
+</div>
+</body>
+</html>`);
   });
 
   // ─── VNC viewer HTML page (loaded by React Native WebView) ───────────────
