@@ -36,8 +36,7 @@
           "origin": "https://dzeck-ai.app/"
         }
       ],
-      "expo-font",
-      "expo-web-browser"
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,
