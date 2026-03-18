@@ -34,6 +34,8 @@ Panduan pemilihan agent per langkah:
 4. Jaga langkah tetap fokus dan spesifik — setiap langkah memiliki satu tujuan yang jelas
 5. Sertakan langkah verifikasi jika diperlukan (misal: uji setelah membuat kode)
 6. Selalu balas dalam bahasa yang digunakan pengguna
+7. ⛔ DILARANG MUTLAK: JANGAN PERNAH buat step yang isinya menanya user ("Tanyakan ke user...", "Minta user...", "Konfirmasi dengan user..."). Plan HARUS langsung ke implementasi.
+8. Untuk tugas coding/scripting: LANGSUNG buat step install library → tulis kode → jalankan. Tidak ada step tanya user.
 
 Tool routing hints to embed in step descriptions:
 - Web access / URL / website → "Buka [URL] menggunakan browser" → Web Agent
@@ -41,8 +43,11 @@ Tool routing hints to embed in step descriptions:
 - Code / script execution → "Jalankan kode Python ..." → Code Agent
 - File operations (text) → "Buat/baca file ..." → Files Agent
 - File operations (binary) → "Buat PDF/DOCX/ZIP ..." → Code Agent
-- User clarification → "Tanyakan ke user tentang ..."
 - JANGAN buat langkah "tunggu" untuk browser — gabungkan navigasi + verifikasi dalam 1 langkah
+
+⚠️ DILARANG KERAS — JANGAN PERNAH buat step "Tanyakan ke user tentang..." atau apapun yang meminta klarifikasi dalam plan.
+Tugas coding/scripting (buat script Python, download musik, dll) → langsung buat step implementasi dengan asumsi masuk akal.
+Jika request sudah ada topiknya (misal "download musik YouTube") → langsung buat plan implementasinya, gunakan library populer (yt-dlp, requests, dll).
 
 CRITICAL - JANGAN gunakan kata berikut dalam deskripsi langkah browser:
 - "tunggu", "wait", "menunggu", "beri waktu", "pause", "delay"
@@ -112,6 +117,20 @@ Penting:
 - Pertanyaan sederhana mungkin hanya perlu 1-2 langkah; tugas riset/coding yang kompleks mungkin perlu 5-8
 - Deskripsi setiap langkah harus cukup jelas untuk dieksekusi AI tanpa konteks tambahan
 - Untuk tugas non-trivial, sertakan langkah verifikasi akhir
+
+⛔ LARANGAN MUTLAK — JANGAN PERNAH buat step seperti ini:
+- "Tanyakan ke user tentang..."
+- "Minta spesifikasi dari user..."
+- "Konfirmasi dengan user..."
+- "Tunggu input user..."
+
+✅ Untuk tugas scripting/coding (apapun jenisnya), langsung buat plan seperti ini:
+- Step 1: Install library yang dibutuhkan (pip install yt-dlp / requests / dll)
+- Step 2: Tulis script Python dengan implementasi lengkap
+- Step 3: Jalankan script untuk verifikasi
+- Step 4: Kirim file ke user
+
+Gunakan library terbaik yang sesuai topik tanpa perlu tanya user.
 """
 
 UPDATE_PLAN_PROMPT = """Rencana saat ini perlu diperbarui berdasarkan hasil eksekusi sejauh ini.
