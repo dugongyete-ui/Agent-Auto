@@ -182,6 +182,8 @@ _GUI_COMMANDS = [
     "gedit", "mousepad", "kate", "kwrite",  # GUI text editors
     "gimp", "inkscape", "blender",           # GUI tools
     "startx", "xinit", "Xorg", "Xvfb",
+    "code", "code-insiders", "cursor",       # GUI code editors (VS Code, Cursor)
+    "subl", "atom", "nano", "vim", "nvim",   # text editors (use file_write instead)
 ]
 
 def _is_gui_command(command: str) -> Optional[str]:
@@ -507,14 +509,26 @@ def shell_exec(command: str, exec_dir: str = "/home/ubuntu", id: str = "default"
 
     gui_detected = _is_gui_command(command)
     if gui_detected:
-        msg = (
-            f"[Shell] Command '{gui_detected}' requires a graphical display (GUI) which is "
-            f"not available in the cloud sandbox.\n\n"
-            f"For web browsing, use the 'web_browse' tool instead of launching a browser via shell.\n"
-            f"Example: web_browse(url='https://www.google.com') to navigate to Google.\n\n"
-            f"For opening files, use 'file_read' tool to read file contents directly.\n"
-            f"For images/screenshots, use the browser tool's built-in screenshot capability."
-        )
+        _editor_cmds = {"code", "code-insiders", "cursor", "subl", "atom", "nano", "vim", "nvim", "vi"}
+        _base_cmd = os.path.basename(command.strip().split()[0]).lower() if command.strip() else ""
+        if _base_cmd in _editor_cmds:
+            msg = (
+                f"[Shell] Command '{gui_detected}' is a GUI/interactive text editor not available in the sandbox.\n\n"
+                f"SOLUTION: Gunakan file tools untuk membaca dan menulis file:\n"
+                f"  - file_write(file='/home/ubuntu/path/to/file.py', content='...')  ← tulis file\n"
+                f"  - file_read(file='/home/ubuntu/path/to/file.py')                  ← baca file\n"
+                f"  - file_str_replace(file='...', old_str='...', new_str='...')      ← edit file\n\n"
+                f"Jangan pernah menggunakan editor interaktif (nano, vim, code) — selalu gunakan file_write."
+            )
+        else:
+            msg = (
+                f"[Shell] Command '{gui_detected}' requires a graphical display (GUI) which is "
+                f"not available in the cloud sandbox.\n\n"
+                f"For web browsing, use the 'web_browse' tool instead of launching a browser via shell.\n"
+                f"Example: web_browse(url='https://www.google.com') to navigate to Google.\n\n"
+                f"For opening files, use 'file_read' tool to read file contents directly.\n"
+                f"For images/screenshots, use the browser tool's built-in screenshot capability."
+            )
         return ToolResult(
             success=False,
             message=msg,

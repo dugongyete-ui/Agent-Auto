@@ -1430,7 +1430,7 @@ function addToolChip(stepId, tcId, evt) {
     cmdSpan.className = 'cmd';
     if (type==='shell'||type==='code') {
       const cmd = evt.function_args?.command || arg || '';
-      if (cmd) { cmdSpan.textContent = '$dzeck-ai ' + cmd + '\n'; panelPre.appendChild(cmdSpan); }
+      if (cmd) { cmdSpan.textContent = 'ubuntu@sandbox:~$ ' + cmd + '\n'; panelPre.appendChild(cmdSpan); }
     } else if (type==='search') {
       const query = evt.function_args?.query || arg || '';
       if (query) { cmdSpan.textContent = '🔍 Mencari: ' + query + '\n'; panelPre.appendChild(cmdSpan); }

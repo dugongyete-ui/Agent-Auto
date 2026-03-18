@@ -188,6 +188,8 @@ def _create_sandbox() -> Optional[Any]:
                 f"{WORKSPACE_DIR}/skills {WORKSPACE_DIR}/Downloads {WORKSPACE_DIR}/upload && "
                 f"[ -n '{session_ws}' ] && mkdir -p {session_ws} || true && "
                 f"echo 'sandbox_ready=true\\nworkspace={WORKSPACE_DIR}\\noutput={OUTPUT_DIR}' > {WORKSPACE_DIR}/sandbox.txt && "
+                f"echo 'export PS1=\"ubuntu@sandbox:~\\$ \"' >> ~/.bashrc && "
+                f"echo 'export PS1=\"ubuntu@sandbox:~\\$ \"' >> ~/.profile && "
                 f"echo 'workspace ready'",
                 timeout=20
             )
