@@ -85,3 +85,7 @@ CF_MODEL = "@cf/meta/llama-3-8b-instruct"
 CF_AGENT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 REDIS_HOST = "redis-16364.c279.us-central1-1.gce.cloud.redislabs.com"
 REDIS_PORT = "16364"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 20000
