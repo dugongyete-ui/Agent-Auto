@@ -600,7 +600,12 @@ export async function registerRoutes(app: any): Promise<Server> {
     // 1. Nix-packaged Chromium — check known fixed paths first (fast fs.existsSync),
     //    these are properly rpath-patched and work without LD_LIBRARY_PATH on NixOS.
     const NIX_CHROMIUM_CANDIDATES = [
-      // Discovered at runtime — ungoogled-chromium versions available in this environment
+      // System-installed Chromium paths (common locations)
+      "/usr/bin/chromium",
+      "/usr/bin/chromium-browser",
+      "/usr/bin/google-chrome",
+      "/usr/bin/google-chrome-stable",
+      // Nix store paths (Replit/NixOS environments)
       "/nix/store/43y6k6fj85l4kcd1yan43hpdld6nmjmp-ungoogled-chromium-131.0.6778.204/bin/chromium",
       "/nix/store/22pqil8ywhgwx1vdnkhr19gmaziyfc99-ungoogled-chromium-98.0.4758.102/bin/chromium",
       "/nix/store/2rx3w289sarzpmnpfywyg2xvpjwj91yc-ungoogled-chromium-92.0.4515.159/bin/chromium",
@@ -735,12 +740,18 @@ export async function registerRoutes(app: any): Promise<Server> {
           const p = execSync(`which ${name} 2>/dev/null`, { encoding: "utf-8", timeout: 2000 }).trim();
           if (p) return p;
         } catch {}
-        return fallback !== null ? fallback : name;
+        return fallback !== null ? fallback : "";
       };
 
-      // Use known nix store paths as fallbacks (from environment introspection)
-      const xvfb = findBin("Xvfb", "/nix/store/8jlz3l9kf9w7zq263vy3ms5c90hy96r4-xorg-server-21.1.13/bin/Xvfb");
-      const x11vnc = findBin("x11vnc", "/nix/store/x15ycm43gka3mkj8lxy14mv8iazxk60s-x11vnc-0.9.16/bin/x11vnc");
+      // Use system PATH first; only fall back to known nix store paths if PATH lookup fails
+      const xvfb = findBin("Xvfb", null);
+      const x11vnc = findBin("x11vnc", null);
+
+      if (!xvfb || !x11vnc) {
+        console.warn(`[VNC] Missing binaries: Xvfb=${xvfb || 'NOT FOUND'} x11vnc=${x11vnc || 'NOT FOUND'}. VNC display unavailable.`);
+        _vncStarting = false;
+        return false;
+      }
 
       console.log(`[VNC] Binaries: Xvfb=${xvfb} x11vnc=${x11vnc}`);
 
