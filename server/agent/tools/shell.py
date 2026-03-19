@@ -269,7 +269,7 @@ def _extract_output_paths_from_command(command: str) -> list:
 def _preflight_requirements_file(command: str, exec_dir: str = "/home/ubuntu") -> Optional[str]:
     """Before executing `pip install -r <file>`, verify the requirements file exists in the sandbox.
     Returns an error message string if the file does not exist, or None if OK."""
-    if not E2B_ENABLED:
+    if not _is_e2b_enabled():
         return None
     import re as _re
     import shlex as _shlex
@@ -304,7 +304,7 @@ def _preflight_requirements_file(command: str, exec_dir: str = "/home/ubuntu") -
 def _preflight_ensure_scripts(command: str, exec_dir: str = "/home/ubuntu") -> Optional[str]:
     """Before executing a python script command in E2B, ensure the script file exists in the sandbox.
     Returns an error message string if the file cannot be ensured, or None on success."""
-    if not E2B_ENABLED:
+    if not _is_e2b_enabled():
         return None
     import re
     match = re.search(r'python[3]?\s+(?:-\w+\s+)*([^\s;|&]+\.py)', command)
@@ -342,7 +342,7 @@ def _auto_fix_python_syntax(script_path: str, error_msg: str, exec_dir: str) -> 
     import re as _re
 
     try:
-        if E2B_ENABLED:
+        if _is_e2b_enabled():
             from server.agent.tools.e2b_sandbox import read_file as _e2b_read
             content = _e2b_read(script_path)
         else:
@@ -379,7 +379,7 @@ def _auto_fix_python_syntax(script_path: str, error_msg: str, exec_dir: str) -> 
         return False
 
     try:
-        if E2B_ENABLED:
+        if _is_e2b_enabled():
             from server.agent.tools.e2b_sandbox import write_file as _e2b_write
             return _e2b_write(script_path, content)
         else:
@@ -409,7 +409,7 @@ def _validate_python_syntax(command: str, exec_dir: str = "/home/ubuntu") -> Opt
     else:
         _fallback_path = None
 
-    if not E2B_ENABLED:
+    if not _is_e2b_enabled():
         return ToolResult(
             success=False,
             message="[Shell] E2B sandbox diperlukan untuk validasi syntax. Tidak ada local execution.",
@@ -641,7 +641,7 @@ def shell_exec(command: str, exec_dir: str = "/home/ubuntu", id: str = "default"
     if blocked:
         return blocked
 
-    if not E2B_ENABLED:
+    if not _is_e2b_enabled():
         msg = (
             "[Shell] E2B sandbox is not available (E2B_API_KEY not set). "
             "All shell execution MUST run inside E2B sandbox for security. "
@@ -714,7 +714,7 @@ def shell_exec(command: str, exec_dir: str = "/home/ubuntu", id: str = "default"
     backend = "E2B"
 
     synced_files = []
-    if E2B_ENABLED and res.get("success", False):
+    if _is_e2b_enabled() and res.get("success", False):
         output_paths = _extract_output_paths_from_command(command)
         try:
             from server.agent.tools.e2b_sandbox import list_output_files as _list_out
@@ -824,7 +824,7 @@ def shell_write_to_process(id: str, input: str, press_enter: bool = True) -> Too
             )
     last_command = session.get("command", "")
     if last_command:
-        if not E2B_ENABLED:
+        if not _is_e2b_enabled():
             return ToolResult(
                 success=False,
                 message="[Shell] E2B sandbox is not available. All shell operations require E2B sandbox.",
