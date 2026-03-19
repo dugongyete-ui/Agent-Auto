@@ -19,7 +19,8 @@ from server.agent.models.tool_result import ToolResult
 
 logger = logging.getLogger(__name__)
 
-E2B_ENABLED = bool(os.environ.get("E2B_API_KEY", ""))
+_E2B_API_KEY_AT_IMPORT = os.environ.get("E2B_API_KEY", "")
+E2B_ENABLED = bool(_E2B_API_KEY_AT_IMPORT)
 PLAYWRIGHT_ENABLED = os.environ.get("PLAYWRIGHT_ENABLED", "true").lower() == "true"
 
 
@@ -481,7 +482,7 @@ class PlaywrightSession:
                 if self._connect_cdp(cdp_url):
                     return True
 
-            if E2B_ENABLED:
+            if _is_e2b_enabled():
                 logger.warning("[Browser] CDP unavailable and E2B is enabled — refusing local headless fallback")
                 self._stop_pw()
                 self._started = False
@@ -816,13 +817,13 @@ def _install_playwright_chromium() -> bool:
 
 def _remap_to_local_path(path: str) -> str:
     """Remap E2B sandbox paths to local writable paths when running locally."""
-    e2b_prefix = "/home/user/dzeck-ai"
+    e2b_prefix = "/home/ubuntu"
     if path.startswith(e2b_prefix):
         rel = path[len(e2b_prefix):]
         local = "/tmp/dzeck_workspace" + rel
         return local
-    if path.startswith("/home/user/"):
-        rel = path[len("/home/user/"):]
+    if path.startswith("/home/"):
+        rel = path[len("/home/"):]
         return "/tmp/dzeck_workspace/" + rel
     return path
 
@@ -860,25 +861,23 @@ class _E2BRequiredBrowserStub:
         pass
 
 
+def _is_e2b_enabled() -> bool:
+    """Dynamic E2B check — re-reads env each call so late-set secrets are picked up."""
+    return bool(os.environ.get("E2B_API_KEY", "") or _E2B_API_KEY_AT_IMPORT)
+
+
 def _make_session() -> Any:
     """Create the best available browser session.
-    E2B-only mode: refuses local fallbacks when E2B is configured.
+    E2B-ONLY mode: When E2B_API_KEY is set, ALL browser execution runs inside
+    E2B cloud sandbox. Local VNC/Playwright is NEVER used as execution environment.
     """
-    if E2B_ENABLED:
-        if _playwright_available and PLAYWRIGHT_ENABLED:
-            sess = PlaywrightSession()
-            if sess.start() and not sess._headless:
-                logger.info("[Browser] Using Playwright via CDP/VNC (E2B mode).")
-                return sess
-            sess.disconnect()
-
-        logger.info("[Browser] Using E2B cloud browser (persistent CDP).")
+    if _is_e2b_enabled():
+        logger.info("[Browser] E2B mode active — routing ALL browser calls to E2B cloud sandbox (isolated).")
         return E2BBrowserSession()
 
-    if not E2B_ENABLED:
-        logger.error("[Browser] E2B sandbox not available (E2B_API_KEY not set). "
-                     "Browser operations require E2B sandbox for security.")
-        return _E2BRequiredBrowserStub()
+    logger.error("[Browser] E2B sandbox not available (E2B_API_KEY not set). "
+                 "Browser operations require E2B sandbox for security.")
+    return _E2BRequiredBrowserStub()
 
 
 # ─── Public Tool Functions ─────────────────────────────────────────────────────

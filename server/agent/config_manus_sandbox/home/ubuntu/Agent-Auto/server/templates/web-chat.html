@@ -109,6 +109,30 @@
     #new-chat-btn:hover{background:var(--surface2);border-color:var(--border2);color:var(--text)}
     #new-chat-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;flex-shrink:0}
 
+    /* ── System status pills ── */
+    #sys-status-bar{
+      display:flex;flex-direction:column;gap:4px;
+      padding:8px 10px 4px;flex-shrink:0;
+    }
+    .sys-pill{
+      display:flex;align-items:center;gap:6px;
+      padding:5px 9px;border-radius:8px;
+      background:var(--surface2);border:1px solid var(--border);
+      font-size:11px;color:var(--text2);cursor:default;
+      transition:background .15s;
+    }
+    .sys-pill-dot{
+      width:6px;height:6px;border-radius:50%;flex-shrink:0;
+      background:var(--muted);
+    }
+    .sys-pill-dot.on{background:var(--success);box-shadow:0 0 0 2px rgba(22,163,74,.15);}
+    .sys-pill-dot.warn{background:var(--warning);box-shadow:0 0 0 2px rgba(217,119,6,.15);}
+    .sys-pill-dot.pulse{animation:statusPulse 2s ease-in-out infinite}
+    @keyframes statusPulse{0%,100%{opacity:1}50%{opacity:.4}}
+    .sys-pill-label{flex:1;font-size:11px;color:var(--text2)}
+    .sys-pill-badge{font-size:10px;color:var(--muted);font-weight:500;padding:1px 5px;
+      background:var(--pill-bg);border-radius:4px}
+
     .history-section-label{
       font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.04em;
       text-transform:uppercase;padding:8px 14px 4px;flex-shrink:0;
@@ -287,6 +311,7 @@
     @keyframes spin{to{transform:rotate(360deg)}}
     .step-ico.completed{background:var(--text2);border-color:var(--text2)}
     .step-ico.failed{background:var(--error);border-color:var(--error)}
+    .step-ico.pending{border-color:var(--accent);border-style:dashed;animation:spin 1.6s linear infinite}
     .step-ico svg{width:8px;height:8px;display:block}
     .step-desc{flex:1;font-size:13px;color:var(--text2);font-weight:500;line-height:1.4}
     .step-desc.done{color:var(--muted)}
@@ -378,6 +403,7 @@
     .plan-step-mini-dot.done{background:var(--text2);border-color:var(--text2)}
     .plan-step-mini-dot.running{border-color:var(--warning);border-top-color:transparent;animation:spin .8s linear infinite}
     .plan-step-mini-dot.failed{background:var(--error);border-color:var(--error)}
+    .plan-step-mini-dot.pending{border-color:var(--accent);border-style:dashed;animation:spin 1.6s linear infinite}
     .plan-step-mini-text{font-size:12px;color:var(--muted2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .plan-step-mini-text.done{color:var(--muted)}
 
@@ -651,6 +677,19 @@
       <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Chat baru
     </button>
+
+    <div id="sys-status-bar">
+      <div class="sys-pill" id="pill-e2b" title="E2B Cloud Sandbox">
+        <div class="sys-pill-dot pulse" id="pill-e2b-dot"></div>
+        <span class="sys-pill-label">E2B Sandbox</span>
+        <span class="sys-pill-badge" id="pill-e2b-badge">Checking...</span>
+      </div>
+      <div class="sys-pill" id="pill-ai" title="Cloudflare Workers AI">
+        <div class="sys-pill-dot pulse" id="pill-ai-dot"></div>
+        <span class="sys-pill-label">CF Workers AI</span>
+        <span class="sys-pill-badge" id="pill-ai-badge">Checking...</span>
+      </div>
+    </div>
 
     <div class="history-section-label">Riwayat</div>
     <div id="history-list">
@@ -966,6 +1005,10 @@ const S = {
   _lastPanelArg: '',
   _lastPanelIcon: '',
   _isAskMsg: false,
+  // Waiting for user reply (mid-plan pause)
+  waitingForUser: false,
+  // Stream generation counter — prevents stale streams from calling finalize()
+  streamGen: 0,
 };
 
 function newSession(firstMessage) {
@@ -1132,6 +1175,7 @@ function startNewChat(clearHistory) {
   S.historyIdx = -1;
   S._liveTermHTML = null;
   S._liveUrl = '-';
+  S.waitingForUser = false;
   document.getElementById('tp-history-nav')?.classList.remove('show');
   document.getElementById('tp-history-bar')?.classList.remove('show');
 
@@ -1386,7 +1430,7 @@ function addToolChip(stepId, tcId, evt) {
     cmdSpan.className = 'cmd';
     if (type==='shell'||type==='code') {
       const cmd = evt.function_args?.command || arg || '';
-      if (cmd) { cmdSpan.textContent = '$dzeck-ai ' + cmd + '\n'; panelPre.appendChild(cmdSpan); }
+      if (cmd) { cmdSpan.textContent = 'ubuntu@sandbox:~$ ' + cmd + '\n'; panelPre.appendChild(cmdSpan); }
     } else if (type==='search') {
       const query = evt.function_args?.query || arg || '';
       if (query) { cmdSpan.textContent = '🔍 Mencari: ' + query + '\n'; panelPre.appendChild(cmdSpan); }
@@ -1671,7 +1715,7 @@ function updatePlanBarCount() {
 function updatePlanMini(id, status) {
   const dot = document.getElementById(`pmd-${id}`);
   const txt = document.getElementById(`pmt-${id}`);
-  if (dot) dot.className = `plan-step-mini-dot ${status==='completed'?'done':status==='running'?'running':status==='failed'?'failed':''}`;
+  if (dot) dot.className = `plan-step-mini-dot ${status==='completed'?'done':status==='running'?'running':status==='failed'?'failed':status==='pending'?'pending':''}`;
   if (txt) txt.className = `plan-step-mini-text ${status==='completed'?'done':''}`;
 }
 
@@ -2315,6 +2359,10 @@ function handleEvent(evt) {
       }
       const s = step.status||'';
       if (s==='running') { updateStepStatus(domId,'running'); openStep(domId); updatePlanMini(step.id,'running'); }
+      else if (s==='pending') {
+        // Step is paused waiting for user input — show as "waiting" without completing
+        updateStepStatus(domId,'pending'); updatePlanMini(step.id,'pending');
+      }
       else if (s==='completed'||s==='failed') {
         updateStepStatus(domId,s); updatePlanMini(step.id,s); updatePlanBarCount();
         captureStepSnapshot(domId, step.description || '');
@@ -2413,6 +2461,25 @@ function handleEvent(evt) {
     }
 
     case 'done': finalize(); break;
+
+    case 'waiting_for_user': {
+      // AI is pausing mid-plan to wait for user's answer
+      S.waitingForUser = true;
+      hideThinking();
+      // Re-enable input so user can type their reply
+      setStreaming(false);
+      // Update UI cues
+      if (inputEl) {
+        inputEl.placeholder = 'Ketik balasan untuk Dzeck...';
+        setTimeout(() => inputEl.focus(), 150);
+      }
+      tpStatus.textContent = 'Menunggu jawaban kamu...';
+      // Update status dot to indicate waiting (yellow)
+      const dot = document.getElementById('status-dot');
+      if (dot) dot.style.background = 'var(--warning)';
+      break;
+    }
+
     case 'error': {
       hideThinking();
       const rawErr = evt.error || 'Terjadi kesalahan';
@@ -2557,7 +2624,14 @@ function finalize() {
   S.aiBodyEl=null; S.aiContent='';
   S.currentStepId=null;
 
-  // Force all plan steps to completed so plan bar never stays in loading state
+  if (S.waitingForUser) {
+    // AI paused mid-plan to ask user — do NOT force-complete remaining steps
+    // Input was already re-enabled in the waiting_for_user handler
+    scrollBottom(true);
+    return;
+  }
+
+  // AI truly finished — force all remaining steps to completed so plan bar never freezes
   if (S.plan && S.plan.steps) {
     S.plan.steps.forEach(st => {
       if (st.status !== 'completed' && st.status !== 'failed') {
@@ -2595,7 +2669,12 @@ async function doReconnect(agentSid) {
     tpStatus.textContent='Menyambungkan kembali...';
     showToast('AI masih berjalan — menyambungkan kembali...', 'info');
 
-    const resp = await fetch(`/api/agent/stream/${agentSid}`, { signal: (S.abortCtrl = new AbortController()).signal });
+    if (S.abortCtrl) { try { S.abortCtrl.abort(); } catch {} }
+    S.streamGen = (S.streamGen || 0) + 1;
+    const myGen = S.streamGen;
+    S.abortCtrl = new AbortController();
+
+    const resp = await fetch(`/api/agent/stream/${agentSid}`, { signal: S.abortCtrl.signal });
     if (!resp.ok) { localStorage.removeItem('dzeck_active_agent_sid'); setStreaming(false); return; }
 
     const reader = resp.body.getReader();
@@ -2610,11 +2689,11 @@ async function doReconnect(agentSid) {
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         const d = line.slice(6).trim();
-        if (d==='[DONE]') { finalize(); return; }
+        if (d==='[DONE]') { if (myGen === S.streamGen) finalize(); return; }
         try { handleEvent(JSON.parse(d)); } catch(e) {}
       }
     }
-    finalize();
+    if (myGen === S.streamGen) finalize();
   } catch(err) {
     if (err.name==='AbortError') return;
     localStorage.removeItem('dzeck_active_agent_sid');
@@ -2629,6 +2708,9 @@ async function doSend(text, attachments) {
   if ((!text&&(!attachments||!attachments.length))||S.isStreaming) return;
   attachments = attachments||[];
 
+  // Detect if this is a continuation (user answering mid-plan question)
+  const isContinuation = S.waitingForUser;
+
   // Init session if new
   if (!S.currentSession) {
     S.currentSession = newSession(text||attachments[0]?.filename||'File');
@@ -2640,21 +2722,41 @@ async function doSend(text, attachments) {
 
   appendUserMsg(text, attachments);
 
-  S.plan=null; S.stepEls={}; S.toolEls={}; S.toolsByStep={}; S.currentStepId=null;
-  S.planPrefix = '';
-  S.stepHistory=[]; S.historyIdx=-1; S._liveTermHTML=null; S._liveUrl='-';
-  document.getElementById('tp-history-nav')?.classList.remove('show');
-  document.getElementById('tp-history-bar')?.classList.remove('show');
-  planBarEl.classList.remove('visible');
-  planMiniEl.innerHTML = '';
-  tpToolInfo.style.display='none'; tpStatus.textContent='Memproses...';
-  const tpTermOut = document.getElementById('tp-term-output');
-  if (tpTermOut) tpTermOut.innerHTML = '';
-  document.getElementById('tp-terminal-area')?.classList.remove('active');
-  document.getElementById('tp-browser-area').style.display = '';
+  // Reset waiting state
+  S.waitingForUser = false;
+  if (inputEl) inputEl.placeholder = 'Berikan tugas untuk Dzeck AI...';
+  const statusDot = document.getElementById('status-dot');
+  if (statusDot) statusDot.style.background = '';
+
+  if (isContinuation) {
+    // Keep existing plan UI visible — just resume from where we left off
+    S.currentStepId = null;
+    tpStatus.textContent = 'Melanjutkan...';
+  } else {
+    // Fresh task — reset all plan/step state
+    S.plan=null; S.stepEls={}; S.toolEls={}; S.toolsByStep={}; S.currentStepId=null;
+    S.planPrefix = '';
+    S.stepHistory=[]; S.historyIdx=-1; S._liveTermHTML=null; S._liveUrl='-';
+    document.getElementById('tp-history-nav')?.classList.remove('show');
+    document.getElementById('tp-history-bar')?.classList.remove('show');
+    planBarEl.classList.remove('visible');
+    planMiniEl.innerHTML = '';
+    tpToolInfo.style.display='none';
+    const tpTermOut = document.getElementById('tp-term-output');
+    if (tpTermOut) tpTermOut.innerHTML = '';
+    document.getElementById('tp-terminal-area')?.classList.remove('active');
+    document.getElementById('tp-browser-area').style.display = '';
+    tpStatus.textContent = 'Memproses...';
+  }
+
+  // Abort any previous stream before starting new one
+  if (S.abortCtrl) { try { S.abortCtrl.abort(); } catch {} S.abortCtrl = null; }
 
   setStreaming(true);
   try { showThinking(); } catch(e) { console.warn('[think]', e); }
+
+  S.streamGen = (S.streamGen || 0) + 1;
+  const myGen = S.streamGen;
   S.abortCtrl = new AbortController();
 
   try {
@@ -2662,7 +2764,13 @@ async function doSend(text, attachments) {
     const resp = await fetch('/api/agent', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ message:text||'[File dilampirkan]', messages, session_id:S.sessionId, attachments }),
+      body: JSON.stringify({
+        message: text||'[File dilampirkan]',
+        messages,
+        session_id: S.sessionId,
+        attachments,
+        is_continuation: isContinuation,
+      }),
       signal: S.abortCtrl.signal,
     });
     if (!resp.ok) throw new Error(`${resp.status}`);
@@ -2678,11 +2786,11 @@ async function doSend(text, attachments) {
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         const d = line.slice(6).trim();
-        if (d==='[DONE]') { finalize(); return; }
+        if (d==='[DONE]') { if (myGen === S.streamGen) finalize(); return; }
         try { handleEvent(JSON.parse(d)); } catch (e) { console.warn('[SSE parse]', d.substring(0, 100), e); }
       }
     }
-    finalize();
+    if (myGen === S.streamGen) finalize();
   } catch(err) {
     if (err.name==='AbortError') return;
     showToast('Gagal terhubung ke AI. Coba lagi.');
@@ -2789,6 +2897,56 @@ function openScreenshot(src) {
 }
 function closeScreenshot() { document.getElementById('ss-modal').classList.remove('open'); }
 document.addEventListener('keydown', e=>{ if(e.key==='Escape'){closeScreenshot();} });
+
+// ── System status check
+async function checkSystemStatus() {
+  try {
+    const r = await fetch('/api/status');
+    if (!r.ok) throw new Error('status error');
+    const d = await r.json();
+
+    const e2bDot = document.getElementById('pill-e2b-dot');
+    const e2bBadge = document.getElementById('pill-e2b-badge');
+    const aiDot = document.getElementById('pill-ai-dot');
+    const aiBadge = document.getElementById('pill-ai-badge');
+
+    if (e2bDot && e2bBadge) {
+      e2bDot.classList.remove('pulse');
+      if (d.e2bEnabled) {
+        e2bDot.classList.add('on');
+        e2bBadge.textContent = 'Aktif';
+        e2bBadge.style.color = 'var(--success)';
+      } else {
+        e2bDot.classList.add('warn');
+        e2bBadge.textContent = 'Lokal';
+        e2bBadge.style.color = 'var(--warning)';
+        document.getElementById('pill-e2b')?.setAttribute('title', 'E2B tidak aktif — menggunakan fallback lokal');
+      }
+    }
+
+    if (aiDot && aiBadge) {
+      aiDot.classList.remove('pulse');
+      const cfOk = d.cloudflareConfigured !== false;
+      if (cfOk) {
+        aiDot.classList.add('on');
+        aiBadge.textContent = 'Terhubung';
+        aiBadge.style.color = 'var(--success)';
+      } else {
+        aiDot.classList.add('warn');
+        aiBadge.textContent = 'Tidak aktif';
+        aiBadge.style.color = 'var(--warning)';
+      }
+    }
+  } catch(e) {
+    const e2bDot = document.getElementById('pill-e2b-dot');
+    const aiDot = document.getElementById('pill-ai-dot');
+    if (e2bDot) { e2bDot.classList.remove('pulse'); e2bDot.classList.add('warn'); }
+    if (aiDot) { aiDot.classList.remove('pulse'); aiDot.classList.add('warn'); }
+    document.getElementById('pill-e2b-badge') && (document.getElementById('pill-e2b-badge').textContent = 'Error');
+    document.getElementById('pill-ai-badge') && (document.getElementById('pill-ai-badge').textContent = 'Error');
+  }
+}
+setTimeout(checkSystemStatus, 500);
 
 // ── Init
 renderHistory();

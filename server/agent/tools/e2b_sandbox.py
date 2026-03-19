@@ -127,7 +127,7 @@ def _push_sandbox_configs(sb: Any) -> None:
 
     # Runtime dirs and files that should NOT be pushed as config
     _SKIP_TOP_DIRS = {"terminal_full_output", "upload", "Agent-Auto"}
-    _SKIP_FILES = {"sandbox.txt"}
+    _SKIP_FILES = {"sandbox.txt", "Agent-Auto-Refactor-Guide.md"}
 
     # Special system files/paths that cannot be written to (virtual/proc-backed or read-only)
     _SKIP_DEST_PATHS = {

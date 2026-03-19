@@ -13,19 +13,21 @@ npm install --legacy-peer-deps --no-audit --no-fund 2>&1 | tail -3 || true
 echo "[post-merge] Menginstall Expo packages..."
 npm install --legacy-peer-deps --no-audit --no-fund \
   "expo@~53.0.0" \
-  "expo-router@~4.0.0" \
+  "expo-router@~5.0.0" \
   "expo-status-bar@~2.2.0" \
-  "expo-splash-screen@~0.29.0" \
+  "expo-splash-screen@~0.30.0" \
   "expo-font@~13.3.0" \
-  "expo-web-browser@~14.0.0" \
-  "expo-constants@~17.0.0" \
-  "expo-linking@~7.0.0" \
+  "expo-web-browser@~14.1.0" \
+  "expo-constants@~17.1.0" \
+  "expo-linking@~7.1.0" \
   "expo-system-ui@~4.0.0" \
-  "react-native@0.79.0" \
+  "react-native@^0.79.7" \
   "react-native-gesture-handler@~2.24.0" \
-  "react-native-safe-area-context@5.4.0" \
+  "react-native-safe-area-context@~5.4.0" \
   "react-native-screens@~4.10.0" \
-  "react-native-reanimated@~3.17.0" \
+  "react-native-reanimated@~3.17.4" \
+  "react-native-web@^0.20.0" \
+  "react-native-keyboard-controller@~1.16.0" \
   "@react-native-async-storage/async-storage@2.1.2" \
   "@react-navigation/native@^7.0.0" \
   2>&1 | tail -3 || true
@@ -44,16 +46,14 @@ if [ -n "$PYTHON" ]; then
     PIP_FLAGS="$PIP_FLAGS --break-system-packages"
   fi
   $PYTHON -m pip install $PIP_FLAGS \
-    "pydantic>=2.0.0" \
+    "pydantic>=2.10.0" \
     "requests>=2.28.0" \
     "aiohttp>=3.8.0" \
     "httpx>=0.24.0" \
     "beautifulsoup4>=4.12.0" \
     "lxml>=4.9.0" \
-    "flask>=3.0.0" \
-    "flask-cors>=4.0.0" \
-    "playwright>=1.40.0" \
-    "e2b>=0.8.0" \
+    "playwright>=1.50.0" \
+    "e2b>=2.0.0" \
     "redis>=5.0.0" \
     "motor>=3.0.0" \
     "pymongo>=4.0.0" \
@@ -62,8 +62,10 @@ if [ -n "$PYTHON" ]; then
     "dnspython>=2.4.0" \
     "certifi>=2024.0.0" \
     "charset-normalizer>=3.0.0" \
+    "idna>=3.4" \
     "multidict>=6.0.0" \
     "yarl>=1.9.0" \
+    "PyYAML>=6.0.0" \
     2>&1 | tail -3 || true
   echo "[post-merge] Python packages selesai"
 else

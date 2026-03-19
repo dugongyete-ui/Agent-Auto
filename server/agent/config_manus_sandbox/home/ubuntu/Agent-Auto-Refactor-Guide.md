@@ -5,7 +5,7 @@ Berdasarkan analisis struktur direktori sandbox Manus dan kode sumber `Agent-Aut
 ## 1. Perombakan Struktur Sandbox (`server/agent/tools/e2b_sandbox.py`)
 
 ### Masalah Saat Ini:
-*   Workspace masih menggunakan `/home/user/dzeck-ai/`.
+*   Workspace sekarang menggunakan `/home/ubuntu/` (sudah diperbaiki dari `/home/user/dzeck-ai/`).
 *   Manajemen paket (`pip install`) dilakukan setiap kali sandbox dibuat, yang memperlambat startup.
 
 ### Solusi (Ikuti Pola Manus):
@@ -42,7 +42,7 @@ Copy-paste prompt di bawah ini ke AI Agent (seperti Claude, GPT-4, atau agen cod
 Halo AI Agent, saya ingin merombak proyek "Agent-Auto" saya agar memiliki standar operasional yang setara dengan Manus AI. Berikut adalah instruksi perbaikannya:
 
 1. **Update Sandbox Manager (`server/agent/tools/e2b_sandbox.py`)**:
-   - Ubah `WORKSPACE_DIR` dari `/home/user/dzeck-ai` menjadi `/home/ubuntu`.
+   - `WORKSPACE_DIR` sudah diubah ke `/home/ubuntu` (selesai).
    - Di dalam fungsi `_create_sandbox`, tambahkan perintah untuk membuat folder standar: `skills/`, `Downloads/`, dan `upload/`.
    - Pastikan setiap startup sandbox juga membuat file `sandbox.txt` di root `/home/ubuntu` sebagai penanda status.
 

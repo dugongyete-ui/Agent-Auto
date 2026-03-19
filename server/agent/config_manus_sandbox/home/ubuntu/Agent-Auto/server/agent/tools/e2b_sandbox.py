@@ -15,18 +15,24 @@ from typing import Optional, Any, Dict
 
 logger = logging.getLogger(__name__)
 
-E2B_API_KEY = os.environ.get("E2B_API_KEY", "")
+_E2B_API_KEY_AT_IMPORT = os.environ.get("E2B_API_KEY", "")
+E2B_API_KEY = _E2B_API_KEY_AT_IMPORT
+
+
+def _get_api_key() -> str:
+    """Re-read E2B_API_KEY from env each time — handles late-set secrets."""
+    return os.environ.get("E2B_API_KEY", "") or _E2B_API_KEY_AT_IMPORT
 
 _sandbox_lock = threading.Lock()
 _sandbox: Optional[Any] = None
 _sandbox_create_attempts = 0
 _MAX_CREATE_ATTEMPTS = 3
 
-WORKSPACE_DIR = "/home/user/dzeck-ai"
-OUTPUT_DIR = "/home/user/dzeck-ai/output"
+WORKSPACE_DIR = "/home/ubuntu"
+OUTPUT_DIR = "/home/ubuntu/output"
 
 def get_session_workspace() -> str:
-    """Return per-session workspace dir: /home/user/dzeck-ai/<session_id>/
+    """Return per-session workspace dir: /home/ubuntu/<session_id>/
     Falls back to WORKSPACE_DIR if no session is set."""
     session_id = os.environ.get("DZECK_SESSION_ID", "")
     if session_id:
@@ -107,31 +113,127 @@ def get_sandbox() -> Optional[Any]:
     return _sandbox
 
 
+def _push_sandbox_configs(sb: Any) -> None:
+    """Push all config files from server/agent/config_manus_sandbox/ into the E2B sandbox.
+    This applies Manus-standard skills, Chromium policies, and other configs."""
+    import hashlib as _hashlib
+    import pathlib
+    import shlex as _shlex
+
+    config_root = pathlib.Path(__file__).parent.parent / "config_manus_sandbox"
+    if not config_root.exists():
+        logger.warning("[E2B] config_manus_sandbox dir not found, skipping config push.")
+        return
+
+    # Runtime dirs and files that should NOT be pushed as config
+    _SKIP_TOP_DIRS = {"terminal_full_output", "upload", "Agent-Auto"}
+    _SKIP_FILES = {"sandbox.txt", "Agent-Auto-Refactor-Guide.md"}
+
+    # Special system files/paths that cannot be written to (virtual/proc-backed or read-only)
+    _SKIP_DEST_PATHS = {
+        "/etc/mtab",       # symlink to /proc/self/mounts, not writable
+        "/etc/resolv.conf", # managed by the sandbox network stack
+    }
+
+    pushed = 0
+    failed = 0
+    for src in config_root.rglob("*"):
+        if not src.is_file():
+            continue
+        rel = src.relative_to(config_root)
+        parts = rel.parts
+
+        # Skip runtime directories and files
+        if parts[0] in _SKIP_TOP_DIRS:
+            continue
+        # For paths under home/ubuntu/, skip runtime subdirs precisely
+        if len(parts) >= 3 and parts[0] == "home" and parts[2] in _SKIP_TOP_DIRS:
+            continue
+        if parts[-1] in _SKIP_FILES:
+            continue
+
+        # config_manus_sandbox/ already uses real filesystem structure (home/, etc/, usr/, var/)
+        # so dest path is simply "/" + relative path
+        dest = "/" + "/".join(parts)
+
+        # Skip special system files that cannot be overwritten
+        if dest in _SKIP_DEST_PATHS:
+            continue
+
+        try:
+            raw_bytes = src.read_bytes()
+            parent = dest.rsplit("/", 1)[0]
+            needs_sudo = dest.startswith("/etc/") or dest.startswith("/usr/") or dest.startswith("/opt/") or dest.startswith("/var/")
+            if needs_sudo:
+                # Write bytes to a tmp path (no sudo needed for /tmp), then sudo-copy to final dest
+                # Use a hash of the relative path for a collision-free tmp filename
+                rel_hash = _hashlib.md5(str(rel).encode()).hexdigest()[:8]
+                tmp_dest = f"/tmp/_cfg_push_{rel_hash}"
+                sb.files.write(tmp_dest, raw_bytes)
+                sb.commands.run(
+                    f"sudo mkdir -p {_shlex.quote(parent)} && "
+                    f"sudo cp {_shlex.quote(tmp_dest)} {_shlex.quote(dest)} && "
+                    f"rm -f {_shlex.quote(tmp_dest)}",
+                    timeout=15
+                )
+            else:
+                sb.commands.run(f"mkdir -p {_shlex.quote(parent)}", timeout=10)
+                sb.files.write(dest, raw_bytes)
+            pushed += 1
+        except Exception as exc:
+            logger.warning("[E2B] Config push failed for %s → %s: %s", src.name, dest, exc)
+            failed += 1
+
+    logger.info("[E2B] Config push complete: %d pushed, %d failed.", pushed, failed)
+
+
 def _create_sandbox() -> Optional[Any]:
     """Create a new E2B sandbox instance with retry logic."""
     global _sandbox_create_attempts
-    if not E2B_API_KEY:
-        logger.error("[E2B] E2B_API_KEY not set. Cannot create sandbox.")
+    api_key = _get_api_key()
+    if not api_key:
+        logger.error("[E2B] E2B_API_KEY not set. Cannot create sandbox. "
+                     "Set E2B_API_KEY in Replit Secrets then restart the backend.")
         return None
 
     for attempt in range(1, _MAX_CREATE_ATTEMPTS + 1):
         try:
             from e2b import Sandbox
             logger.info("[E2B] Creating new sandbox (attempt %d/%d)...", attempt, _MAX_CREATE_ATTEMPTS)
-            sb = Sandbox.create(api_key=E2B_API_KEY, timeout=900)
+            sb = Sandbox.create(api_key=api_key, timeout=900)
             logger.info("[E2B] Sandbox ready (id=%s). Setting up workspace...", sb.sandbox_id)
 
             session_ws = get_session_workspace()
             sb.commands.run(
-                f"mkdir -p {WORKSPACE_DIR} {OUTPUT_DIR} {session_ws} /tmp/dzeck_output && "
-                f"cd {session_ws} && echo 'workspace ready'",
-                timeout=15
+                f"sudo mkdir -p {WORKSPACE_DIR} 2>/dev/null || mkdir -p {WORKSPACE_DIR} 2>/dev/null || true && "
+                f"sudo chown $(whoami):$(whoami) {WORKSPACE_DIR} 2>/dev/null || true && "
+                f"mkdir -p {OUTPUT_DIR} /tmp/dzeck_output "
+                f"{WORKSPACE_DIR}/skills {WORKSPACE_DIR}/Downloads {WORKSPACE_DIR}/upload && "
+                f"[ -n '{session_ws}' ] && mkdir -p {session_ws} || true && "
+                f"echo 'sandbox_ready=true\\nworkspace={WORKSPACE_DIR}\\noutput={OUTPUT_DIR}' > {WORKSPACE_DIR}/sandbox.txt && "
+                f"echo 'export PS1=\"ubuntu@sandbox:~\\$ \"' >> ~/.bashrc && "
+                f"echo 'export PS1=\"ubuntu@sandbox:~\\$ \"' >> ~/.profile && "
+                f"echo 'workspace ready'",
+                timeout=20
             )
 
+            _push_sandbox_configs(sb)
+
             sb.commands.run(
-                "pip install --quiet reportlab python-docx openpyxl Pillow requests beautifulsoup4 "
-                "pandas matplotlib yt-dlp 2>/dev/null || true",
-                timeout=120
+                "pip install --quiet --break-system-packages "
+                "reportlab python-docx openpyxl Pillow requests beautifulsoup4 "
+                "pandas matplotlib yt-dlp numpy scipy httpx aiohttp "
+                "flask fastapi uvicorn pydantic lxml tabulate tqdm "
+                "PyPDF2 pdfplumber fpdf2 Markdown mistune "
+                "qrcode pyqrcode Pygments colorama rich "
+                "python-dateutil pytz tzdata "
+                "playwright selenium 2>/dev/null || true",
+                timeout=180
+            )
+            sb.commands.run(
+                "apt-get install -y -q ffmpeg imagemagick curl wget unzip zip jq "
+                "2>/dev/null || true",
+                timeout=60
             )
 
             sb.commands.run(
@@ -197,7 +299,7 @@ def run_command(command: str, workdir: str = WORKSPACE_DIR, timeout: int = 120,
                 "exit_code": -1,
             }
         try:
-            if workdir and workdir.startswith("/home/user/dzeck-ai"):
+            if workdir and workdir.startswith("/home/ubuntu"):
                 import shlex
                 try:
                     sb.commands.run(f"mkdir -p {shlex.quote(workdir)}", timeout=10)
@@ -293,7 +395,7 @@ def list_output_files() -> list:
     if sb is None:
         return []
     try:
-        result = sb.commands.run("ls -1 /home/user/dzeck-ai/output/ 2>/dev/null || echo ''", timeout=10)
+        result = sb.commands.run("ls -1 /home/ubuntu/output/ 2>/dev/null || echo ''", timeout=10)
         stdout = getattr(result, "stdout", "") or ""
         return [
             "{}/{}".format(OUTPUT_DIR, f.strip())
@@ -456,13 +558,20 @@ def sync_file_from_sandbox(sandbox_path: str, local_path: str = "") -> Optional[
 
 
 def list_workspace_files() -> list:
-    """List files in the E2B workspace directory."""
+    """List user-created files in the E2B workspace directory.
+    Excludes hidden dirs (.cache, .npm, .local, .config), skills/, upload/, and sandbox.txt."""
     sb = get_sandbox()
     if sb is None:
         return []
     try:
+        # Exclude hidden directories and system dirs to avoid noise
         result = sb.commands.run(
-            f"find {WORKSPACE_DIR} -type f -maxdepth 4 2>/dev/null | head -100",
+            f"find {WORKSPACE_DIR} -type f -maxdepth 4 "
+            r"-not -path '*/\.*' "
+            f"-not -path '{WORKSPACE_DIR}/skills/*' "
+            f"-not -path '{WORKSPACE_DIR}/upload/*' "
+            f"-not -name 'sandbox.txt' "
+            f"2>/dev/null | head -200",
             timeout=15
         )
         if result.stdout:
