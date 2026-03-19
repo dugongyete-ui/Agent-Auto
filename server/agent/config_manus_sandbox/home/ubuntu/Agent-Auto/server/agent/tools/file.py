@@ -29,16 +29,53 @@ DZECK_FILES_DIR = _get_files_dir()
 
 
 _MIME_MAP = {
-    ".txt": "text/plain", ".md": "text/markdown", ".csv": "text/csv",
-    ".json": "application/json", ".html": "text/html", ".xml": "application/xml",
-    ".js": "application/javascript", ".py": "text/x-python", ".sql": "text/x-sql",
-    ".yaml": "text/yaml", ".yml": "text/yaml", ".svg": "image/svg+xml",
-    ".zip": "application/zip", ".pdf": "application/pdf",
+    # Text / code
+    ".txt": "text/plain", ".md": "text/markdown", ".markdown": "text/markdown",
+    ".csv": "text/csv", ".tsv": "text/tab-separated-values",
+    ".json": "application/json", ".jsonl": "application/json",
+    ".html": "text/html", ".htm": "text/html", ".xml": "application/xml",
+    ".js": "application/javascript", ".mjs": "application/javascript",
+    ".ts": "application/typescript", ".tsx": "application/typescript",
+    ".py": "text/x-python", ".ipynb": "application/x-ipynb+json",
+    ".sql": "text/x-sql", ".sh": "application/x-sh", ".bash": "application/x-sh",
+    ".yaml": "text/yaml", ".yml": "text/yaml", ".toml": "text/plain",
+    ".svg": "image/svg+xml", ".css": "text/css",
+    ".r": "text/plain", ".R": "text/plain",
+    ".go": "text/plain", ".rs": "text/plain", ".java": "text/plain",
+    ".cpp": "text/plain", ".c": "text/plain", ".h": "text/plain",
+    ".rb": "text/plain", ".php": "text/plain", ".kt": "text/plain",
+    ".swift": "text/plain", ".dart": "text/plain",
+    ".ini": "text/plain", ".cfg": "text/plain", ".conf": "text/plain",
+    ".env": "text/plain", ".log": "text/plain",
+    # Archives
+    ".zip": "application/zip", ".tar": "application/x-tar",
+    ".gz": "application/gzip", ".bz2": "application/x-bzip2",
+    ".7z": "application/x-7z-compressed", ".rar": "application/x-rar-compressed",
+    # Documents
+    ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc": "application/msword",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xls": "application/vnd.ms-excel",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".odt": "application/vnd.oasis.opendocument.text",
+    ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+    ".rtf": "application/rtf",
+    # Images
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-    ".gif": "image/gif", ".webp": "image/webp",
+    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+    ".ico": "image/x-icon", ".tiff": "image/tiff", ".tif": "image/tiff",
+    # Audio / Video
+    ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg",
+    ".mp4": "video/mp4", ".avi": "video/x-msvideo", ".mkv": "video/x-matroska",
+    ".mov": "video/quicktime", ".webm": "video/webm",
+    # Data / misc
+    ".parquet": "application/octet-stream", ".feather": "application/octet-stream",
+    ".pkl": "application/octet-stream", ".pickle": "application/octet-stream",
+    ".npy": "application/octet-stream", ".npz": "application/octet-stream",
+    ".db": "application/octet-stream", ".sqlite": "application/octet-stream",
+    ".bin": "application/octet-stream",
 }
 
 
@@ -112,7 +149,7 @@ def file_read(
     end_line = _to_int_or_none(end_line)
     try:
         _e2b_enabled = bool(os.environ.get("E2B_API_KEY", ""))
-        is_sandbox_path = file.startswith("/home/user")
+        is_sandbox_path = file.startswith("/home/ubuntu")
 
         file_content = None
         if _e2b_enabled:
@@ -184,8 +221,8 @@ def file_write(
             write_content = write_content + "\n"
 
         _e2b_enabled = bool(os.environ.get("E2B_API_KEY", ""))
-        is_sandbox_path = file.startswith("/home/user")
-        is_output_path = "/output/" in file or file.startswith("/home/user/dzeck-ai/output")
+        is_sandbox_path = file.startswith("/home/ubuntu")
+        is_output_path = "/output/" in file or file.startswith("/home/ubuntu/output")
 
         if not _e2b_enabled:
             return ToolResult(
@@ -282,7 +319,7 @@ def file_str_replace(
     """Replace a string in a file."""
     try:
         _e2b_enabled = bool(os.environ.get("E2B_API_KEY", ""))
-        is_sandbox_path = file.startswith("/home/user")
+        is_sandbox_path = file.startswith("/home/ubuntu")
 
         if not _e2b_enabled:
             return ToolResult(
@@ -334,12 +371,12 @@ def file_str_replace(
                 data={"error": e2b_replace_err, "file": file, "e2b_write_failed": True},
             )
 
-        is_output_path = "/output/" in file or file.startswith("/home/user/dzeck-ai/output")
-        is_deliverable = is_output_path or file.startswith("/tmp/dzeck_files")
+        # When E2B is enabled, ALL files are deliverable (same as file_write behavior)
+        _e2b_active = bool(os.environ.get("E2B_API_KEY", ""))
+        is_output_path = "/output/" in file or file.startswith("/home/ubuntu/output")
+        is_deliverable = _e2b_active or is_output_path or file.startswith("/tmp/dzeck_files")
 
         local_path = os.path.join(DZECK_FILES_DIR, os.path.basename(file))
-        if is_output_path:
-            is_deliverable = True
 
         parent_dir = os.path.dirname(local_path)
         if parent_dir and not os.path.exists(parent_dir):
@@ -352,9 +389,22 @@ def file_str_replace(
         if is_deliverable:
             download_url = _register_file_for_download(local_path)
 
+        ext = os.path.splitext(file)[1].lstrip(".") if "." in os.path.basename(file) else ""
+        lang_hint = ext if ext in ("py", "js", "ts", "tsx", "jsx", "html", "css", "json", "yaml", "yml", "sh", "bash", "sql", "md", "xml", "svg", "java", "cpp", "c", "go", "rs", "rb") else ""
+        content_preview = new_content[:1000]
+        if len(new_content) > 1000:
+            content_preview += "\n... (truncated, total {} chars)".format(len(new_content))
+
+        msg = f"Replaced {count} occurrence(s) in {file}"
+        if download_url:
+            msg += "\n📎 File siap didownload."
+        msg += "\n\nContent preview:\n```{lang}\n{preview}\n```".format(
+            lang=lang_hint, preview=content_preview
+        )
+
         return ToolResult(
             success=True,
-            message=f"Replaced {count} occurrence(s) in {file}",
+            message=msg,
             data={
                 "file": file,
                 "local_path": local_path,
@@ -378,7 +428,7 @@ def file_find_in_content(
     _e2b_enabled = bool(os.environ.get("E2B_API_KEY", ""))
 
     # E2B path: use grep inside sandbox
-    if _e2b_enabled and (path.startswith("/home/user") or path.startswith("/tmp")):
+    if _e2b_enabled and (path.startswith("/home/ubuntu") or path.startswith("/tmp")):
         try:
             from server.agent.tools.e2b_sandbox import run_command as e2b_run
             import shlex as _shlex
@@ -471,7 +521,7 @@ def file_find_by_name(
     _e2b_enabled = bool(os.environ.get("E2B_API_KEY", ""))
 
     # E2B path: run find command inside sandbox
-    if _e2b_enabled and (path.startswith("/home/user") or path.startswith("/tmp")):
+    if _e2b_enabled and (path.startswith("/home/ubuntu") or path.startswith("/tmp")):
         try:
             from server.agent.tools.e2b_sandbox import run_command as e2b_run
             import shlex as _shlex

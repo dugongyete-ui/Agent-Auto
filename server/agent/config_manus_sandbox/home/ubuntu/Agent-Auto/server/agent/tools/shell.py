@@ -16,7 +16,13 @@ from typing import Optional, Dict, Any, Callable
 from server.agent.models.tool_result import ToolResult
 from server.agent.tools.base import BaseTool, tool
 
-E2B_ENABLED = bool(os.environ.get("E2B_API_KEY", ""))
+_E2B_API_KEY_AT_IMPORT = os.environ.get("E2B_API_KEY", "")
+E2B_ENABLED = bool(_E2B_API_KEY_AT_IMPORT)
+
+
+def _is_e2b_enabled() -> bool:
+    """Dynamic E2B check — re-reads env each call so late-set secrets are picked up."""
+    return bool(os.environ.get("E2B_API_KEY", "") or _E2B_API_KEY_AT_IMPORT)
 
 _shell_sessions: Dict[str, Dict[str, Any]] = {}
 _sessions_lock = threading.Lock()
@@ -54,7 +60,7 @@ def _shell_quote(s: str) -> str:
     return shlex.quote(s)
 
 
-def _run_e2b(command: str, exec_dir: str = "/home/user/dzeck-ai", timeout: int = 90) -> Dict[str, Any]:
+def _run_e2b(command: str, exec_dir: str = "/home/ubuntu", timeout: int = 90) -> Dict[str, Any]:
     """Execute command via E2B cloud sandbox. Auto-ensures workspace dir exists.
     Streams stdout/stderr to stream_queue if one is registered on the current thread.
     Uses run_command wrapper for consistent retry/guardrail behavior."""
@@ -176,6 +182,8 @@ _GUI_COMMANDS = [
     "gedit", "mousepad", "kate", "kwrite",  # GUI text editors
     "gimp", "inkscape", "blender",           # GUI tools
     "startx", "xinit", "Xorg", "Xvfb",
+    "code", "code-insiders", "cursor",       # GUI code editors (VS Code, Cursor)
+    "subl", "atom", "nano", "vim", "nvim",   # text editors (use file_write instead)
 ]
 
 def _is_gui_command(command: str) -> Optional[str]:
@@ -243,10 +251,10 @@ def _sync_e2b_output_file(file_path: str) -> str:
 
 
 def _extract_output_paths_from_command(command: str) -> list:
-    """Scan a shell command for output file paths in /home/user/dzeck-ai/output/."""
+    """Scan a shell command for output file paths in /home/ubuntu/output/."""
     import re
-    OUTPUT_DIR = "/home/user/dzeck-ai/output/"
-    pattern = r"(/home/user/dzeck-ai/output/[\w.\-/]+)"
+    OUTPUT_DIR = "/home/ubuntu/output/"
+    pattern = r"(/home/ubuntu/output/[\w.\-/]+)"
     paths = re.findall(pattern, command)
     unique = []
     seen = set()
@@ -258,10 +266,45 @@ def _extract_output_paths_from_command(command: str) -> list:
     return unique
 
 
-def _preflight_ensure_scripts(command: str, exec_dir: str = "/home/user/dzeck-ai") -> Optional[str]:
+def _preflight_requirements_file(command: str, exec_dir: str = "/home/ubuntu") -> Optional[str]:
+    """Before executing `pip install -r <file>`, verify the requirements file exists in the sandbox.
+    Returns an error message string if the file does not exist, or None if OK."""
+    if not _is_e2b_enabled():
+        return None
+    import re as _re
+    import shlex as _shlex
+    match = _re.search(r'pip[3]?\s+install\s+(?:\S+\s+)*-r\s+(\S+)', command)
+    if not match:
+        return None
+    req_file = match.group(1).strip("'\"")
+    if not req_file.startswith("/"):
+        req_file = os.path.normpath(os.path.join(exec_dir or "/home/ubuntu", req_file))
+    try:
+        from server.agent.tools.e2b_sandbox import get_sandbox as _get_sb
+        sb = _get_sb()
+        if sb is None:
+            return None
+        r = sb.commands.run(f"test -f {_shlex.quote(req_file)} && echo EXISTS", timeout=8)
+        if r.exit_code == 0 and "EXISTS" in (r.stdout or ""):
+            return None
+        msg = (
+            f"[Shell] Requirements file tidak ditemukan di sandbox: {req_file}\n\n"
+            f"SOLUSI WAJIB — pilih salah satu:\n"
+            f"  1. Buat file requirements.txt terlebih dahulu dengan file_write, lalu jalankan lagi:\n"
+            f"     file_write(file='{req_file}', content='requests\\npandas\\n...')\n"
+            f"  2. ATAU langsung install tanpa file (lebih aman):\n"
+            f"     pip install --break-system-packages <paket1> <paket2> ...\n\n"
+            f"JANGAN retry dengan perintah yang sama — file harus dibuat dulu."
+        )
+        return msg
+    except Exception:
+        return None
+
+
+def _preflight_ensure_scripts(command: str, exec_dir: str = "/home/ubuntu") -> Optional[str]:
     """Before executing a python script command in E2B, ensure the script file exists in the sandbox.
     Returns an error message string if the file cannot be ensured, or None on success."""
-    if not E2B_ENABLED:
+    if not _is_e2b_enabled():
         return None
     import re
     match = re.search(r'python[3]?\s+(?:-\w+\s+)*([^\s;|&]+\.py)', command)
@@ -299,7 +342,7 @@ def _auto_fix_python_syntax(script_path: str, error_msg: str, exec_dir: str) -> 
     import re as _re
 
     try:
-        if E2B_ENABLED:
+        if _is_e2b_enabled():
             from server.agent.tools.e2b_sandbox import read_file as _e2b_read
             content = _e2b_read(script_path)
         else:
@@ -336,7 +379,7 @@ def _auto_fix_python_syntax(script_path: str, error_msg: str, exec_dir: str) -> 
         return False
 
     try:
-        if E2B_ENABLED:
+        if _is_e2b_enabled():
             from server.agent.tools.e2b_sandbox import write_file as _e2b_write
             return _e2b_write(script_path, content)
         else:
@@ -345,47 +388,104 @@ def _auto_fix_python_syntax(script_path: str, error_msg: str, exec_dir: str) -> 
         return False
 
 
-def _validate_python_syntax(command: str, exec_dir: str = "/home/user/dzeck-ai") -> Optional[ToolResult]:
+def _validate_python_syntax(command: str, exec_dir: str = "/home/ubuntu") -> Optional[ToolResult]:
     """Pre-validate Python script syntax with up to 3 auto-fix attempts.
-    Returns ToolResult on failure after all attempts, None on success."""
+    Returns ToolResult on failure after all attempts, None on success.
+    Distinguishes between 'file not found' and actual syntax errors."""
     import re as _re
     match = _re.search(r'python[3]?\s+(?:-\w+\s+)*([^\s;|&]+\.py)', command)
     if not match:
         return None
     script_path = match.group(1)
+
+    # Resolve to absolute path: try exec_dir first, fallback to WORKSPACE_DIR
     if not script_path.startswith("/"):
-        script_path = os.path.join(exec_dir, script_path)
+        from server.agent.tools.e2b_sandbox import WORKSPACE_DIR as _WS
+        candidate_exec = os.path.normpath(os.path.join(exec_dir or _WS, script_path))
+        candidate_ws   = os.path.normpath(os.path.join(_WS, script_path))
+        # Prefer exec_dir path; we'll verify existence inside the loop
+        script_path = candidate_exec
+        _fallback_path = candidate_ws if candidate_ws != candidate_exec else None
+    else:
+        _fallback_path = None
+
+    if not _is_e2b_enabled():
+        return ToolResult(
+            success=False,
+            message="[Shell] E2B sandbox diperlukan untuk validasi syntax. Tidak ada local execution.",
+            data={"error": "e2b_required", "command": command},
+        )
+
+    # ── Step 0: Quickly check if the file actually exists in E2B ─────────────
+    def _check_file_exists_in_e2b(path: str) -> bool:
+        try:
+            import shlex as _shlex
+            from server.agent.tools.e2b_sandbox import get_sandbox as _get_sb
+            sb = _get_sb()
+            if sb is None:
+                return False
+            r = sb.commands.run(f"test -f {_shlex.quote(path)} && echo EXISTS", timeout=8)
+            return r.exit_code == 0 and "EXISTS" in (r.stdout or "")
+        except Exception:
+            return False
+
+    resolved_path = script_path
+    if not _check_file_exists_in_e2b(resolved_path):
+        # Try fallback workspace path
+        if _fallback_path and _check_file_exists_in_e2b(_fallback_path):
+            resolved_path = _fallback_path
+        else:
+            # File truly does not exist — give a clear "write it first" error
+            msg = (
+                f"[Shell] File tidak ditemukan di sandbox: {resolved_path}\n\n"
+                f"SOLUSI: Tulis file terlebih dahulu menggunakan file_write, kemudian jalankan lagi.\n"
+                f"Contoh: file_write(file='{resolved_path}', content='...')"
+            )
+            return ToolResult(
+                success=False,
+                message=msg,
+                data={"stdout": "", "stderr": msg, "return_code": 1,
+                      "command": command, "error": "file_not_found",
+                      "script_path": resolved_path},
+            )
 
     max_attempts = 3
     last_stderr = ""
 
     for attempt in range(1, max_attempts + 1):
-        compile_cmd = f"python3 -m py_compile {script_path}"
-        if E2B_ENABLED:
-            res = _run_e2b(compile_cmd, exec_dir=exec_dir, timeout=30)
-        else:
-            return ToolResult(
-                success=False,
-                message="[Shell] E2B sandbox diperlukan untuk validasi syntax. Tidak ada local execution.",
-                data={"error": "e2b_required", "command": command},
-            )
+        compile_cmd = f"python3 -m py_compile {resolved_path}"
+        res = _run_e2b(compile_cmd, exec_dir=exec_dir, timeout=30)
 
         if res.get("success", False) or res.get("exit_code", -1) == 0:
             if attempt > 1:
                 import logging
                 logging.getLogger(__name__).info(
-                    "[Shell] Python syntax fixed on attempt %d for %s", attempt, script_path)
+                    "[Shell] Python syntax fixed on attempt %d for %s", attempt, resolved_path)
             return None
 
-        last_stderr = res.get("stderr", "")
+        last_stderr = res.get("stderr", "") or res.get("stdout", "")
+
+        # If py_compile itself says "No such file" → file disappeared mid-check
+        if "No such file or directory" in last_stderr or "errno 2" in last_stderr.lower():
+            msg = (
+                f"[Shell] File hilang dari sandbox saat validasi: {resolved_path}\n"
+                f"Kemungkinan sandbox di-reset. Tulis ulang file dengan file_write lalu coba lagi."
+            )
+            return ToolResult(
+                success=False,
+                message=msg,
+                data={"stdout": "", "stderr": last_stderr, "return_code": 1,
+                      "command": command, "error": "file_disappeared",
+                      "script_path": resolved_path},
+            )
 
         if attempt < max_attempts:
-            fixed = _auto_fix_python_syntax(script_path, last_stderr, exec_dir)
+            fixed = _auto_fix_python_syntax(resolved_path, last_stderr, exec_dir)
             if not fixed:
                 break
 
     msg = (
-        f"[Shell] Python syntax validation FAILED for {script_path} "
+        f"[Shell] Python syntax validation FAILED for {resolved_path} "
         f"(after {min(attempt, max_attempts)} attempt(s)).\n"
         f"Error: {last_stderr}\n\n"
         f"FIX REQUIRED: The script has syntax errors. You MUST:\n"
@@ -399,7 +499,7 @@ def _validate_python_syntax(command: str, exec_dir: str = "/home/user/dzeck-ai")
         message=msg,
         data={"stdout": "", "stderr": last_stderr, "return_code": 1,
               "command": command, "error": "syntax_validation_failed",
-              "script_path": script_path, "attempts": attempt},
+              "script_path": resolved_path, "attempts": attempt},
     )
 
 
@@ -470,20 +570,57 @@ def _check_error_in_output(stdout: str, stderr: str) -> bool:
     return any(indicator in combined for indicator in error_indicators)
 
 
-def shell_exec(command: str, exec_dir: str = "/home/user/dzeck-ai", id: str = "default") -> ToolResult:
+_PROTECTED_SYSTEM_DIRS = [
+    "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc",
+    "/root", "/run", "/sbin", "/srv", "/sys", "/tmp", "/usr", "/var",
+]
+
+def _check_system_dir_deletion(command: str) -> Optional[str]:
+    """Block rm -rf commands targeting system directories outside /home/ubuntu."""
+    import re
+    pattern = r'\brm\s+(?:-[\w]+\s+)*(-rf?|-fr?)\s+([\S]+)'
+    for match in re.finditer(pattern, command):
+        target = match.group(2).rstrip("/")
+        if not target.startswith("/home/ubuntu") and not target.startswith("/tmp/dzeck"):
+            for sys_dir in _PROTECTED_SYSTEM_DIRS:
+                if target == sys_dir or target.startswith(sys_dir + "/"):
+                    return (
+                        f"[Shell] BLOCKED: Attempted to delete protected system directory '{target}'. "
+                        f"Only paths under /home/ubuntu are allowed for deletion. "
+                        f"Refusing to execute this command."
+                    )
+    return None
+
+
+def shell_exec(command: str, exec_dir: str = "/home/ubuntu", id: str = "default") -> ToolResult:
     """Execute a shell command. Uses E2B cloud sandbox when available, refuses local execution."""
-    exec_dir = exec_dir or "/home/user/dzeck-ai"
+    exec_dir = exec_dir or "/home/ubuntu"
+    # Dynamic check — re-reads env in case secret was set after module import
+    global E2B_ENABLED
+    E2B_ENABLED = _is_e2b_enabled()
 
     gui_detected = _is_gui_command(command)
     if gui_detected:
-        msg = (
-            f"[Shell] Command '{gui_detected}' requires a graphical display (GUI) which is "
-            f"not available in the cloud sandbox.\n\n"
-            f"For web browsing, use the 'web_browse' tool instead of launching a browser via shell.\n"
-            f"Example: web_browse(url='https://www.google.com') to navigate to Google.\n\n"
-            f"For opening files, use 'file_read' tool to read file contents directly.\n"
-            f"For images/screenshots, use the browser tool's built-in screenshot capability."
-        )
+        _editor_cmds = {"code", "code-insiders", "cursor", "subl", "atom", "nano", "vim", "nvim", "vi"}
+        _base_cmd = os.path.basename(command.strip().split()[0]).lower() if command.strip() else ""
+        if _base_cmd in _editor_cmds:
+            msg = (
+                f"[Shell] Command '{gui_detected}' is a GUI/interactive text editor not available in the sandbox.\n\n"
+                f"SOLUTION: Gunakan file tools untuk membaca dan menulis file:\n"
+                f"  - file_write(file='/home/ubuntu/path/to/file.py', content='...')  ← tulis file\n"
+                f"  - file_read(file='/home/ubuntu/path/to/file.py')                  ← baca file\n"
+                f"  - file_str_replace(file='...', old_str='...', new_str='...')      ← edit file\n\n"
+                f"Jangan pernah menggunakan editor interaktif (nano, vim, code) — selalu gunakan file_write."
+            )
+        else:
+            msg = (
+                f"[Shell] Command '{gui_detected}' requires a graphical display (GUI) which is "
+                f"not available in the cloud sandbox.\n\n"
+                f"For web browsing, use the 'web_browse' tool instead of launching a browser via shell.\n"
+                f"Example: web_browse(url='https://www.google.com') to navigate to Google.\n\n"
+                f"For opening files, use 'file_read' tool to read file contents directly.\n"
+                f"For images/screenshots, use the browser tool's built-in screenshot capability."
+            )
         return ToolResult(
             success=False,
             message=msg,
@@ -491,11 +628,20 @@ def shell_exec(command: str, exec_dir: str = "/home/user/dzeck-ai", id: str = "d
                   "id": id, "error": "gui_not_available"},
         )
 
+    sys_del_err = _check_system_dir_deletion(command)
+    if sys_del_err:
+        return ToolResult(
+            success=False,
+            message=sys_del_err,
+            data={"stdout": "", "stderr": sys_del_err, "return_code": 1,
+                  "command": command, "id": id, "error": "system_dir_deletion_blocked"},
+        )
+
     blocked = _check_repeated_command_prerun(command)
     if blocked:
         return blocked
 
-    if not E2B_ENABLED:
+    if not _is_e2b_enabled():
         msg = (
             "[Shell] E2B sandbox is not available (E2B_API_KEY not set). "
             "All shell execution MUST run inside E2B sandbox for security. "
@@ -506,6 +652,15 @@ def shell_exec(command: str, exec_dir: str = "/home/user/dzeck-ai", id: str = "d
             message=msg,
             data={"stdout": "", "stderr": msg, "return_code": 1, "command": command,
                   "id": id, "error": "e2b_not_available"},
+        )
+
+    req_err = _preflight_requirements_file(command, exec_dir=exec_dir)
+    if req_err:
+        return ToolResult(
+            success=False,
+            message=req_err,
+            data={"stdout": "", "stderr": req_err, "return_code": 1,
+                  "command": command, "id": id, "error": "requirements_file_not_found"},
         )
 
     preflight_err = _preflight_ensure_scripts(command, exec_dir=exec_dir)
@@ -559,7 +714,7 @@ def shell_exec(command: str, exec_dir: str = "/home/user/dzeck-ai", id: str = "d
     backend = "E2B"
 
     synced_files = []
-    if E2B_ENABLED and res.get("success", False):
+    if _is_e2b_enabled() and res.get("success", False):
         output_paths = _extract_output_paths_from_command(command)
         try:
             from server.agent.tools.e2b_sandbox import list_output_files as _list_out
@@ -669,7 +824,7 @@ def shell_write_to_process(id: str, input: str, press_enter: bool = True) -> Too
             )
     last_command = session.get("command", "")
     if last_command:
-        if not E2B_ENABLED:
+        if not _is_e2b_enabled():
             return ToolResult(
                 success=False,
                 message="[Shell] E2B sandbox is not available. All shell operations require E2B sandbox.",
@@ -736,7 +891,7 @@ class ShellTool(BaseTool):
         ),
         parameters={
             "id": {"type": "string", "description": "Unique session identifier (e.g. 'main', 'build', 'test'). Use the SAME id across shell_exec, shell_view, shell_wait, shell_write_to_process, and shell_kill_process to operate on the same session. A session must be created with shell_exec before it can be used by other shell tools."},
-            "exec_dir": {"type": "string", "description": "Working directory for command execution. Default: /home/user/dzeck-ai"},
+            "exec_dir": {"type": "string", "description": "Working directory for command execution. Default: /home/ubuntu"},
             "command": {"type": "string", "description": "Shell command to execute (bash syntax supported)"},
         },
         required=["id", "exec_dir", "command"],

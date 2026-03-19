@@ -19,6 +19,68 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - Do not make changes to the `app/` folder without explicit instruction.
 - All prompts should be in Bahasa Indonesia by default.
 
+## Recent Updates (March 2026 — Session 16: Python + Cloudflare AI Fix)
+- **Python 3.11 diinstall:** Module `python-3.11` ditambahkan ke environment Replit — mengatasi error `spawn python3 ENOENT` yang menyebabkan semua permintaan AI gagal.
+- **PyYAML diinstall:** Package `PyYAML` (yang diperlukan `agent_flow.py`) diinstall via pip ke `.pythonlibs/`.
+- **CF environment variables dikonfigurasi:** Set 4 env vars shared yang hilang:
+  - `CF_ACCOUNT_ID=6c807fe58ad83714e772403cd528dbeb`
+  - `CF_GATEWAY_NAME=dzeck`
+  - `CF_MODEL=@cf/meta/llama-3-8b-instruct`
+  - `CF_AGENT_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast`
+- **AI agent berfungsi penuh:** Verifikasi `/api/agent` endpoint — response streaming berhasil dari Cloudflare Workers AI.
+
+## Recent Updates (March 2026 — Session 15: Web & Expo Go Fix)
+- **`server/index.ts` dipulihkan ke versi original:** Mengembalikan `configureExpoAndLanding()` yang melayani `server/templates/web-chat.html` langsung di URL root (`/`), sehingga web dapat diakses kembali. Sebelumnya menggunakan Vite kosong yang selalu 404.
+- **`server/routes.ts` dipulihkan ke versi original:** Mengembalikan semua API endpoint lengkap (`/api/agent`, `/api/chat`, `/api/sessions`, VNC WebSocket, file upload, dll).
+- **`server/templates/` dibuat:** Menyalin 3 template HTML asli: `web-chat.html`, `landing-page.html`, `vnc-view.html`.
+- **`multer` diinstall:** Dependency yang dibutuhkan `routes.ts` untuk file upload.
+- **Expo Go QR Code diperbaiki:** Workflow Expo Go beralih dari `--tunnel` (ngrok) ke `--lan` dengan `REACT_NATIVE_PACKAGER_HOSTNAME=$REPLIT_DEV_DOMAIN` sehingga tidak butuh ngrok.
+- **`metro.config.cjs` diperbaiki:** Tambah `blockList` untuk folder `.local` agar Metro tidak crash saat ada file sementara yang hilang.
+
+## Recent Updates (March 2026 — Session 14: Syntax Validation Fix & File Delivery)
+- **`_validate_python_syntax` diperbaiki:** Sebelum menjalankan `py_compile`, kini memeriksa keberadaan file di E2B sandbox terlebih dahulu. Jika file tidak ada → pesan "file_not_found" yang jelas (bukan "syntax FAILED"). Juga handle "file_disappeared" jika sandbox reset di tengah jalan. Resolve path fallback: coba `exec_dir/script.py` → `WORKSPACE_DIR/script.py`.
+- **File dikirim di error path:** `run_async` kini emit `files` event sebelum `done` event di path exception — sehingga file yang sudah dibuat tetap terkirim ke user meski agent gagal.
+- **Scan workspace semua file:** `summarize_async` kini panggil `list_workspace_files()` (selain `list_output_files()`) — scan seluruh `/home/ubuntu/` (exclude hidden dirs, skills/, upload/) dan sync ke local. File baru yang belum di `_created_files` ditambahkan otomatis.
+- **`list_workspace_files` diperbarui:** Filter hidden dirs (`*/.*`) dan system paths (`skills/`, `upload/`, `sandbox.txt`) via `find` command di E2B.
+- **`file_str_replace` diperbaiki:** Saat E2B aktif, semua file kini `is_deliverable=True` (konsisten dengan `file_write`). Ditambahkan content preview di response message.
+- **`_MIME_MAP` diperluas:** Dari ~20 ke 60+ ekstensi — mencakup `.sh`, `.ipynb`, `.r`, `.go`, `.rs`, `.java`, `.cpp`, `.toml`, `.ini`, `.log`, archive formats (`.tar`, `.gz`, `.7z`), audio/video, data science formats (`.parquet`, `.pkl`, `.npy`, `.db`), dll.
+
+## Recent Updates (March 2026 — Session 13: Manus Skill System Implementation)
+- **Skill System diimplementasikan:** Paket `skill-creator` dari Manus.im diekstrak dan ditempatkan di `server/agent/sandbox_config/skills/skill-creator/` dengan struktur lengkap: `SKILL.md`, `scripts/init_skill.py`, `scripts/quick_validate.py`, `references/`.
+- **System prompt diperbarui:** Ditambahkan `<skills_module>` yang mengajarkan Dzeck cara menemukan, memuat, dan menggunakan skills, serta cara membuat skill baru menggunakan `init_skill.py`.
+- **Agent prompts diperbarui:** `code_agent.py` dan `files_agent.py` kini mengetahui sistem skill dan kapan harus menggunakannya.
+- **Sudo fix untuk sandbox:** `_create_sandbox()` kini menggunakan `sudo mkdir -p /home/ubuntu` agar workspace berhasil dibuat meski user sandbox bukan `ubuntu`.
+- **Sudo fix untuk config push:** `_push_sandbox_configs()` kini menggunakan `sudo` untuk file yang di-push ke `/etc/`, `/usr/`, `/opt/`.
+- **Chromium policy aktif:** `manus-downloads.json` berhasil di-push ke `/etc/chromium/policies/managed/` di dalam sandbox.
+- **File cleanup:** ZIP arsip dan file `.skill` sementara dihapus; `attached_assets/` dibersihkan dari file tidak perlu.
+- **`@assets` alias diperbarui:** `vite.config.ts` alias `@assets` dipindahkan dari `attached_assets/` ke `client/src/assets/`.
+
+## Sandbox Config Structure
+```
+server/agent/sandbox_config/
+├── etc/
+│   └── chromium/policies/managed/manus-downloads.json
+└── skills/
+    └── skill-creator/
+        ├── SKILL.md
+        ├── LICENSE.txt
+        ├── scripts/
+        │   ├── init_skill.py
+        │   └── quick_validate.py
+        └── references/
+            ├── workflows.md
+            ├── output-patterns.md
+            └── progressive-disclosure-patterns.md
+```
+
+## Recent Updates (March 2026 — Session 12: E2B Fix & System Status UI)
+- **Root cause E2B ditemukan & diperbaiki:** Backend server berjalan sebelum E2B_API_KEY dan CF_API_KEY dikonfigurasi. Setelah server di-restart, kedua key terdeteksi: `[E2B] Cloud sandbox mode enabled`.
+- **Bug `_persist_event` diperbaiki:** Method ini menggunakan syntax JavaScript `.then()` yang tidak valid di Python. Diperbaiki menggunakan `store = await svc._get_session_store(); await store.save_event(...)`.
+- **E2B streaming drain diperbaiki:** Setelah loop `while not future.done()` selesai, ditambahkan final drain untuk menangkap output yang mungkin tertinggal di queue — mencegah kehilangan output terminal.
+- **Status indicator ditambahkan ke sidebar:** Dua pill status (E2B Sandbox + CF Workers AI) muncul di sidebar dengan dot hijau/kuning + animasi pulse saat checking. Data diambil dari `/api/status` saat load halaman.
+- **`/api/status` endpoint diperkaya:** Ditambahkan field `cloudflareConfigured` agar frontend bisa menampilkan status koneksi AI model secara akurat.
+- **Verified API response:** `{"e2bEnabled":true,"cloudflareConfigured":true}` — kedua layanan aktif.
+
 ## Recent Updates (March 2026 — Session 11: VNC Black Screen Fix)
 - **Root cause identified & fixed:** Chromium crashloop disebabkan kombinasi flag `--disable-gpu` + `--disable-software-rasterizer`. Tanpa GPU hardware (`/dev/dri` tidak ada) dan software rasterizer dinonaktifkan, Chromium tidak punya rendering path sama sekali → crash exitCode 127.
 - **Nix-packaged Chromium digunakan:** Playwright's bundled Chromium (`chrome-linux64/chrome`) tidak bisa dijalankan langsung di NixOS karena library paths tidak set (libglib, libX11, dll. missing). Server sekarang menggunakan `ungoogled-chromium-131.0.6778.204` dari Nix store yang sudah di-rpath-patch dengan benar.
@@ -78,12 +140,12 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - **UI Syntax Highlighting:** `components/AgentToolView.tsx` — Replaced plain `Text` rendering in `ShellContent` and `FileContent` with `RichContent` component that parses Markdown code blocks and renders them with syntax highlighting (keywords, strings, comments, numbers, functions in Dracula-style colors), line numbers, and language badges. Added `CallingArgsPreview` to show highlighted code/file content when `status === "calling"`. Increased result display limit and improved argument key highlighting.
 
 ## Recent Updates (March 2026 — Session 5: Agent Core Engine Overhaul)
-- **Per-Session Workspace Isolation:** `e2b_sandbox.py` — Added `get_session_workspace()` which namespaces E2B workspace by session ID: `/home/user/dzeck-ai/<session_id>/`. Sandbox creation auto-creates session workspace. All shell commands default to session workspace instead of shared dir.
+- **Per-Session Workspace Isolation:** `e2b_sandbox.py` — Added `get_session_workspace()` which namespaces E2B workspace by session ID: `/home/ubuntu/<session_id>/`. Sandbox creation auto-creates session workspace. All shell commands default to session workspace instead of shared dir.
 - **E2B file_find_by_name/file_find_in_content in Sandbox:** `file.py` — Both functions now detect E2B paths (`/home/user`, `/tmp`) and run `find`/`grep` commands inside the E2B sandbox instead of local filesystem (which had no sandbox files). This fixes the "directory not found" errors when agent tries to search for files it just created in E2B.
 - **Strengthened Repeated Error Detection (Block at 2):** `shell.py` — `_check_repeated_command_prerun` now blocks at count >= 2 (was 3). `_check_repeated_error` now uses session-scoped keys (prefixed with `DZECK_SESSION_ID`) to prevent cross-session pollution. Error message updated to: "BLOCKED: identical command/error seen before — change approach entirely".
 - **Context Window Compaction:** `agent_flow.py` — Added `_compact_exec_messages()` function that compresses exec_messages when count > 12: keeps system prompt, first user message, last 4 messages, and a compressed summary of the middle. Called in both native tool-call path and text-based tool-call path. Prevents token limit errors on long tasks.
 - **Step Retry on Failure:** `agent_flow.py` — `run_async` now tracks `_step_consecutive_failures` per step. When a step fails for the first time, it automatically retries once with an explicit error context injected: "Previous attempt failed with: [error]. Take a DIFFERENT approach." Only marks the plan step as truly failed after 2 consecutive failures on the same step.
-- **Session Workspace in Shell Preflight:** `shell.py` — `_preflight_ensure_scripts` and `_run_e2b` now use `get_session_workspace()` as default exec_dir instead of hardcoded `/home/user/dzeck-ai`. `shell_exec` also uses session workspace as default.
+- **Session Workspace in Shell Preflight:** `shell.py` — `_preflight_ensure_scripts` and `_run_e2b` now use `get_session_workspace()` as default exec_dir instead of hardcoded `/home/ubuntu`. `shell_exec` also uses session workspace as default.
 
 ## Recent Updates (March 2026 — Session 4: Production Overhaul)
 - **Fix Plan Auto-Complete Bug:** `agent_flow.py` — `message_ask_user` no longer marks steps as COMPLETED. Steps stay PENDING while waiting for user reply. `save_step_completed` is skipped when `step_waiting=True` in both continuation and main flow paths.
@@ -128,7 +190,8 @@ Dzeck AI is a cross-platform application built with Expo (React Native) and Node
 - **Database:** MongoDB Atlas for session and agent persistence.
 - **Cache:** Redis for session state caching.
 - **Browser Automation:** Playwright (non-headless) running on a VNC display for live interaction, with HTTP fallback.
-- **Shell Sandbox:** E2B Cloud Sandbox for isolated and secure code execution, with 900s timeout, 3-attempt retry, auto-recovery, and keepalive. The workspace is `/home/user/dzeck-ai/` with output in `/home/user/dzeck-ai/output/`. Pre-installed packages include reportlab, python-docx, openpyxl, Pillow, yt-dlp, pandas, matplotlib.
+- **Shell Sandbox:** E2B Cloud Sandbox for isolated and secure code execution, with 900s timeout, 3-attempt retry, auto-recovery, and keepalive. The workspace is `/home/ubuntu/` with output in `/home/ubuntu/output/`. Standard folders: `skills/`, `Downloads/`, `upload/`. Status marker: `/home/ubuntu/sandbox.txt`. Pre-installed packages include reportlab, python-docx, openpyxl, Pillow, yt-dlp, pandas, matplotlib.
+- **Sandbox Config Push:** `server/agent/sandbox_config/` — All files here are automatically pushed into the E2B sandbox on startup via `_push_sandbox_configs()`. Includes Manus AI skills (`skills/skill-creator/`) and Chromium policy (`etc/chromium/policies/managed/manus-downloads.json` → sets download dir to `/home/ubuntu/Downloads`). Add new skills or configs here and they will be available automatically.
 - **System Design:** Domain-Driven Design (DDD) with clear separation of Domain, Application, and Infrastructure layers.
 - **Session Management:** Full session resume and rollback support.
 - **Tooling:** Class-based tools implemented with a `BaseTool` pattern and `@tool` decorator.

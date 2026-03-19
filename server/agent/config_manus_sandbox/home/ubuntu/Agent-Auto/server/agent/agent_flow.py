@@ -809,9 +809,9 @@ class DzeckAgent:
         try:
             svc = await self._get_session_service()
             if svc:
-                await svc._get_session_store().then(
-                    lambda s: s.save_event(self.session_id, event_type, data)
-                )
+                store = await svc._get_session_store()
+                if store:
+                    await store.save_event(self.session_id, event_type, data)
         except Exception:
             pass
 
@@ -1194,15 +1194,27 @@ class DzeckAgent:
                 from server.agent.tools.shell import (
                     _validate_python_syntax, _check_repeated_command_prerun,
                     _check_repeated_error, _check_error_in_output,
+                    _preflight_requirements_file,
                 )
                 sb = get_sandbox()
                 cmd = _args.get("command", "")
-                workdir = _args.get("exec_dir", "") or "/home/user/dzeck-ai"
+                workdir = _args.get("exec_dir", "") or "/home/ubuntu"
                 timeout_s = _args.get("timeout", 90)
                 if not sb:
                     return execute_tool(_res, _args)
 
                 from server.agent.models.tool_result import ToolResult
+
+                req_err = _preflight_requirements_file(cmd, workdir)
+                if req_err:
+                    e2b_q.put(None)
+                    return ToolResult(
+                        success=False,
+                        message=req_err,
+                        data={"stdout": "", "stderr": req_err, "return_code": 1,
+                              "command": cmd, "backend": "E2B",
+                              "error": "requirements_file_not_found"},
+                    )
 
                 blocked = _check_repeated_command_prerun(cmd)
                 if blocked:
@@ -1269,6 +1281,20 @@ class DzeckAgent:
                 if batch:
                     chunk = "\n".join(("[stderr] " if t == "stderr" else "") + l for t, l in batch)
                     yield make_event("tool_stream", tool_call_id=tool_call_id, chunk=chunk)
+
+            # Drain any remaining items after future completes (prevents output loss)
+            final_batch = []
+            try:
+                while True:
+                    item = e2b_q.get_nowait()
+                    if item is None:
+                        break
+                    final_batch.append(item)
+            except _queue_mod.Empty:
+                pass
+            if final_batch:
+                chunk = "\n".join(("[stderr] " if t == "stderr" else "") + l for t, l in final_batch)
+                yield make_event("tool_stream", tool_call_id=tool_call_id, chunk=chunk)
 
             tool_result = await future
         else:
@@ -1396,7 +1422,7 @@ Available tools:
 - file_find_by_name: Find files by glob. Args: {"path": "/dir", "glob": "*.py"}
 - file_find_in_content: Search in files. Args: {"path": "/dir", "pattern": "search_regex", "glob": "**/*"}
 - image_view: View an image. Args: {"image": "/path/to/image"}
-- shell_exec: Run shell command. Args: {"id": "sess1", "exec_dir": "/home/user/dzeck-ai", "command": "ls -la"}
+- shell_exec: Run shell command. Args: {"id": "sess1", "exec_dir": "/home/ubuntu", "command": "ls -la"}
 - shell_view: View shell session output. Args: {"id": "sess1"}
 - shell_wait: Wait then view session. Args: {"id": "sess1", "seconds": 5}
 - shell_write_to_process: Send input to process. Args: {"id": "sess1", "input": "text", "press_enter": true}
@@ -1685,19 +1711,74 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
 
         output_files_info = "(tidak ada file output)"
         try:
-            from server.agent.tools.e2b_sandbox import list_output_files as _list_output, ensure_zip_output
+            from server.agent.tools.e2b_sandbox import (
+                list_output_files as _list_output,
+                list_workspace_files as _list_workspace,
+                sync_file_from_sandbox as _sync_from_sb,
+                ensure_zip_output,
+                OUTPUT_DIR as _OUTPUT_DIR,
+                WORKSPACE_DIR as _WS_DIR,
+            )
+            from server.agent.tools.file import _make_download_url, _get_files_dir, _MIME_MAP
+
             try:
                 ensure_zip_output()
             except Exception:
                 pass
+
+            # ── 1. Output dir files (primary deliverables) ──
             output_files = _list_output()
-            if output_files:
+            # ── 2. Workspace root files (scripts, docs, etc. not in /output/) ──
+            _deliverable_exts = set(_MIME_MAP.keys())
+            try:
+                workspace_files_raw = _list_workspace()
+            except Exception:
+                workspace_files_raw = []
+
+            # Filter workspace files: skip system/hidden/skills dirs
+            # Accept ALL file extensions — unknown ones get application/octet-stream
+            _skip_prefixes = (
+                f"{_WS_DIR}/skills/", f"{_WS_DIR}/.local", f"{_WS_DIR}/.cache",
+                f"{_WS_DIR}/.npm", f"{_WS_DIR}/.config", f"{_WS_DIR}/.bashrc",
+                f"{_WS_DIR}/.profile", f"{_WS_DIR}/upload/",
+            )
+            _skip_exact = {f"{_WS_DIR}/sandbox.txt"}
+            workspace_files = []
+            for wf in workspace_files_raw:
+                if wf in _skip_exact:
+                    continue
+                if any(wf.startswith(p) for p in _skip_prefixes):
+                    continue
+                if wf.startswith(_OUTPUT_DIR):
+                    continue  # already covered by output_files
+                # Accept all files — no extension filter
+                workspace_files.append(wf)
+
+            all_e2b_files = output_files + workspace_files
+
+            if all_e2b_files:
                 output_files_info = "\n".join(
-                    f"- {os.path.basename(f)} ({f})" for f in output_files
+                    f"- {os.path.basename(f)} ({f})" for f in all_e2b_files
                 )
-                for f in output_files:
-                    from server.agent.tools.shell import _sync_e2b_output_file
-                    _sync_e2b_output_file(f)
+                _files_base = _get_files_dir()
+                synced_fnames = {f.get("filename", "") for f in self._created_files}
+                for ef in all_e2b_files:
+                    fname = os.path.basename(ef)
+                    if not fname:
+                        continue
+                    if fname in synced_fnames:
+                        continue
+                    local_target = os.path.join(_files_base, fname)
+                    local = _sync_from_sb(ef, local_target)
+                    if local:
+                        durl = _make_download_url(local)
+                        self._created_files.append({
+                            "filename": fname,
+                            "path": local,
+                            "download_url": durl,
+                            "mime": _MIME_MAP.get(os.path.splitext(fname)[1].lower(), "application/octet-stream"),
+                        })
+                        synced_fnames.add(fname)
         except Exception:
             pass
 
@@ -1917,6 +1998,7 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                                         "user_message": original_user_message,
                                         "chat_history": self.chat_history,
                                     })
+                            yield make_event("done", success=True, session_id=self.session_id, waiting_for_user=True)
                             return
 
                         if step.status == ExecutionStatus.COMPLETED:
@@ -2118,6 +2200,7 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                                 "user_message": user_message,
                                 "chat_history": self.chat_history,
                             })
+                    yield make_event("done", success=True, session_id=self.session_id, waiting_for_user=True)
                     return
 
                 if step.status == ExecutionStatus.COMPLETED:
@@ -2185,6 +2268,9 @@ ONLY respond with JSON. No explanations, no markdown, ONLY the JSON object.
                     pass
             yield make_event("error", error="Agent error: {}".format(e))
             traceback.print_exc(file=sys.stderr)
+            # ── Always emit created files even on error path ──
+            if self._created_files:
+                yield make_event("files", files=self._created_files)
             yield make_event("done", success=False, session_id=self.session_id)
 
 
