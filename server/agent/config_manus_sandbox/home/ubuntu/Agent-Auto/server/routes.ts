@@ -39,13 +39,19 @@ const upload = multer({
 });
 
 // ─── E2B Cloud Sandbox (replaces VNC) ────────────────────────────────────────
-const E2B_ENABLED = !!process.env.E2B_API_KEY;
-
-if (E2B_ENABLED) {
-  console.log("[E2B] Cloud sandbox mode enabled. Browser/shell tools run in isolated E2B environment.");
-} else {
-  console.warn("[E2B] E2B_API_KEY not set. Using local fallback for browser/shell tools.");
+// Use a function instead of a const so it picks up .env values loaded after import
+function isE2BEnabled(): boolean {
+  return !!process.env.E2B_API_KEY;
 }
+
+// Log E2B status after a tick so .env has time to load
+setImmediate(() => {
+  if (isE2BEnabled()) {
+    console.log("[E2B] Cloud sandbox mode enabled. Browser/shell tools run in isolated E2B environment.");
+  } else {
+    console.warn("[E2B] E2B_API_KEY not set. Using local fallback for browser/shell tools.");
+  }
+});
 
 function getCFConfig() {
   const accountId = process.env.CF_ACCOUNT_ID || "";
@@ -82,7 +88,7 @@ export async function registerRoutes(app: any): Promise<Server> {
     res.json({
       status: "ok",
       timestamp: new Date().toISOString(),
-      e2bEnabled: E2B_ENABLED,
+      e2bEnabled: isE2BEnabled(),
       cloudflareConfigured: !!startupCfg.apiKey,
     });
   });
@@ -223,7 +229,7 @@ export async function registerRoutes(app: any): Promise<Server> {
     activeAgentSessions.set(sid, session);
 
     // Send session event
-    const sessionLine = `data: ${JSON.stringify({ type: "session", session_id: sid, e2b_enabled: E2B_ENABLED })}\n\n`;
+    const sessionLine = `data: ${JSON.stringify({ type: "session", session_id: sid, e2b_enabled: isE2BEnabled() })}\n\n`;
     _broadcastToSession(session, sessionLine);
 
     let buf = "";
@@ -348,7 +354,7 @@ export async function registerRoutes(app: any): Promise<Server> {
       message: "API is working",
       timestamp: new Date().toISOString(),
       cloudflareConfigured: !!startupCfg.apiKey,
-      e2bEnabled: E2B_ENABLED,
+      e2bEnabled: isE2BEnabled(),
     });
   });
 
@@ -663,6 +669,9 @@ export async function registerRoutes(app: any): Promise<Server> {
       stdio: "ignore",
       env: { ...process.env, DISPLAY: VNC_DISPLAY },
     });
+    _chromiumProc.on("error", (err: Error) => {
+      console.warn(`[VNC] Chromium spawn error: ${err.message}`);
+    });
     _chromiumProc.unref();
 
     // Wait and verify Chromium didn't crash immediately
@@ -756,11 +765,14 @@ export async function registerRoutes(app: any): Promise<Server> {
       // 1. Start Xvfb with retry
       let xvfbProc: any = null;
       for (let attempt = 1; attempt <= 3; attempt++) {
-        xvfbProc = spawnProc(xvfb, [VNC_DISPLAY, "-screen", "0", "1280x720x24", "-ac", "-nolisten", "tcp"], {
-          detached: false, stdio: "ignore",
-          env: { ...process.env },
-        });
-        await new Promise(r => setTimeout(r, 2000));
+          xvfbProc = spawnProc(xvfb, [VNC_DISPLAY, "-screen", "0", "1280x720x24", "-ac", "-nolisten", "tcp"], {
+            detached: false, stdio: "ignore",
+            env: { ...process.env },
+          });
+          xvfbProc.on("error", (err: Error) => {
+            console.warn(`[VNC] Xvfb spawn error: ${err.message}`);
+          });
+          await new Promise(r => setTimeout(r, 2000));
         if (xvfbProc.exitCode === null) {
           break;
         }
@@ -780,10 +792,11 @@ export async function registerRoutes(app: any): Promise<Server> {
       const xsetroot = findBin("xsetroot", "");
       if (xsetroot) {
         try {
-          spawnProc(xsetroot, ["-solid", "#2d2d44"], {
+          const xsetrootProc = spawnProc(xsetroot, ["-solid", "#2d2d44"], {
             detached: false, stdio: "ignore",
             env: { ...process.env, DISPLAY: VNC_DISPLAY },
           });
+          xsetrootProc.on("error", () => {});
           console.log("[VNC] Background set via xsetroot");
         } catch {}
       }
@@ -791,18 +804,21 @@ export async function registerRoutes(app: any): Promise<Server> {
       // 3. Start x11vnc on VNC_PORT_NUM (avoids conflict with any system :5900)
       let x11vncProc: any = null;
       for (let attempt = 1; attempt <= 3; attempt++) {
-        x11vncProc = spawnProc(x11vnc, [
-          "-display", VNC_DISPLAY, "-forever", "-shared", "-nopw",
-          "-rfbport", String(VNC_PORT_NUM),
-          "-noxdamage", "-cursor", "arrow",
-          "-xkb", "-noxrecord", "-noxfixes",
-          "-nowf", "-norc",
-          "-quiet",
-        ], {
-          detached: false, stdio: "ignore",
-          env: { ...process.env, DISPLAY: VNC_DISPLAY },
-        });
-        await new Promise(r => setTimeout(r, 2000));
+          x11vncProc = spawnProc(x11vnc, [
+            "-display", VNC_DISPLAY, "-forever", "-shared", "-nopw",
+            "-rfbport", String(VNC_PORT_NUM),
+            "-noxdamage", "-cursor", "arrow",
+            "-xkb", "-noxrecord", "-noxfixes",
+            "-nowf", "-norc",
+            "-quiet",
+          ], {
+            detached: false, stdio: "ignore",
+            env: { ...process.env, DISPLAY: VNC_DISPLAY },
+          });
+          x11vncProc.on("error", (err: Error) => {
+            console.warn(`[VNC] x11vnc spawn error: ${err.message}`);
+          });
+          await new Promise(r => setTimeout(r, 2000));
         if (x11vncProc.exitCode === null) {
           break;
         }
@@ -855,6 +871,9 @@ export async function registerRoutes(app: any): Promise<Server> {
           const fbProc = spawnProc(fluxbox, [], {
             detached: false, stdio: "ignore",
             env: { ...process.env, DISPLAY: VNC_DISPLAY },
+          });
+          fbProc.on("error", (err: Error) => {
+            console.warn(`[VNC] Fluxbox spawn error: ${err.message}`);
           });
           _vncProcs.push(fbProc);
           await new Promise(r => setTimeout(r, 1000));
